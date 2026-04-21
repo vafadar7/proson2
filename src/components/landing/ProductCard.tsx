@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
-import { ShoppingCart, CheckCircle2, Sparkles, TrendingUp } from 'lucide-react';
+import { ShoppingCart, CheckCircle2, Sparkles, TrendingUp, Eye } from 'lucide-react';
+import { useNavigate } from 'react-router-dom'; // ƏLAVƏ EDİLDİ
 import type { Product } from '../../data/products';
 
 interface ProductCardProps {
@@ -9,6 +10,8 @@ interface ProductCardProps {
 }
 
 export default function ProductCard({ product, index, onAddToCart }: ProductCardProps) {
+  const navigate = useNavigate(); // ƏLAVƏ EDİLDİ
+  
   const getBadgeColor = () => {
     if (product.isNew) return 'bg-secondary text-white';
     if (product.isBestseller) return 'bg-accent text-white';
@@ -71,14 +74,26 @@ export default function ProductCard({ product, index, onAddToCart }: ProductCard
           )}
         </div>
 
-        {/* CTA */}
-        <button
-          onClick={() => onAddToCart?.(product)}
-          className="flex items-center justify-center gap-1.5 w-full py-2 bg-primary text-white font-semibold text-xs rounded-lg hover:bg-primary/90 transition-all hover:scale-[1.02] active:scale-[0.98]"
-        >
-          <ShoppingCart className="w-3.5 h-3.5" />
-          Səbətə Əlavə Et
-        </button>
+        {/* DÜYMƏLƏR — DƏYİŞDİRİLDİ (İki düymə yan-yana) */}
+        <div className="flex gap-2">
+          <button
+            onClick={() => onAddToCart?.(product)}
+            className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-primary text-white font-semibold text-xs rounded-lg hover:bg-primary/90 transition-all hover:scale-[1.02] active:scale-[0.98]"
+          >
+            <ShoppingCart className="w-3.5 h-3.5" />
+            Səbətə At
+          </button>
+          
+          {/* ƏTRAFLI BAX DÜYMƏSİ */}
+          <button
+            onClick={() => navigate(`/product/${product.id}`)}
+            className="flex items-center justify-center gap-1.5 px-3 py-2 border border-border bg-card text-primary font-semibold text-xs rounded-lg hover:bg-secondary/10 hover:border-secondary/50 transition-all"
+            title="Ətraflı məlumat"
+          >
+            <Eye className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Ətraflı</span>
+          </button>
+        </div>
       </div>
     </motion.div>
   );

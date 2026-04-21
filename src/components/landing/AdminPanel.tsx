@@ -1,17 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { 
-  X, Plus, Trash2, Upload, Images, Save, Eye, ChevronDown, 
-  LogOut, Tag, FolderPlus, Loader2, Database, Package, List
+  X, Plus, Trash2, Upload, Save, Eye, ChevronDown, 
+  LogOut, Tag, FolderPlus, Loader2, Package, List, Filter
 } from 'lucide-react';
 import { categories as defaultCategories, products as sampleProducts } from '../../data/products';
 import type { Product, Category } from '../../data/products';
 import { supabase } from '../../lib/supabase';
-
-// Gallery images - 2 dənə qaldı (4-ü silindi)
-const GALLERY_IMAGES = [
-  { id: 'g1', url: 'https://images.unsplash.com/photo-1593642632559-0c6d3fc62b89?w=400&q=80', label: 'Laptop' },
-  { id: 'g2', url: 'https://images.unsplash.com/photo-1525547719571-a2d4ac8945e2?w=400&q=80', label: 'Tech' },
-];
 
 const emptyProduct = (): Omit<Product, 'id'> => ({
   name: '', price: 0, originalPrice: undefined,
@@ -19,8 +13,16 @@ const emptyProduct = (): Omit<Product, 'id'> => ({
   badge: '', isNew: false, isBestseller: false,
 });
 
-// Yeni tab strukturu: 2 yerə bölündü
-type Tab = 'add-product' | 'manage-products' | 'categories';
+type Tab = 'add-product' | 'manage-products' | 'categories' | 'filters';
+
+interface FilterType {
+  id: string;
+  name: string;
+  key: string;
+  type: 'select' | 'checkbox' | 'range';
+  options: string[];
+  categoryId?: string;
+}
 
 interface AdminPanelProps { onClose: () => void; }
 
@@ -35,17 +37,16 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
   // Data state
   const [products, setProducts] = useState<Product[]>([]);
   const [customCategories, setCustomCategories] = useState<Category[]>([]);
+  const [filters, setFilters] = useState<FilterType[]>([]);
   const allCategories = [...defaultCategories, ...customCategories];
   const [isLoading, setIsLoading] = useState(true);
 
-  // UI state - Yeni tablar
+  // UI state
   const [tab, setTab] = useState<Tab>('add-product');
   const [form, setForm] = useState(emptyProduct());
   const [specKey, setSpecKey] = useState('');
   const [specVal, setSpecVal] = useState('');
-  const [imageMode, setImageMode] = useState<'upload' | 'gallery' | 'url'>('gallery');
   const [previewUrl, setPreviewUrl] = useState('');
-  const [urlInput, setUrlInput] = useState('');
   const [success, setSuccess] = useState('');
   const [editId, setEditId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -55,6 +56,14 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
   const [newCatName, setNewCatName] = useState('');
   const [newCatId, setNewCatId] = useState('');
   const [catSuccess, setCatSuccess] = useState('');
+
+  // Filter form state
+  const [newFilterName, setNewFilterName] = useState('');
+  const [newFilterKey, setNewFilterKey] = useState('');
+  const [newFilterType, setNewFilterType] = useState<'select' | 'checkbox' | 'range'>('select');
+  const [newFilterOptions, setNewFilterOptions] = useState('');
+  const [selectedCategoryForFilter, setSelectedCategoryForFilter] = useState('');
+  const [filterSuccess, setFilterSuccess] = useState('');
 
   // Check auth on mount
   useEffect(() => {
@@ -77,7 +86,7 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
 
   const fetchData = async () => {
     setIsLoading(true);
-    await Promise.all([fetchProducts(), fetchCategories()]);
+    await Promise.all([fetchProducts(), fetchCategories(), fetchFilters()]);
     setIsLoading(false);
   };
 
@@ -129,6 +138,29 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
     }
   };
 
+  const fetchFilters = async () => {
+    const { data, error } = await supabase
+      .from('filters')
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('Filter fetch error:', error);
+      return;
+    }
+    
+    if (data) {
+      setFilters(data.map((f: any) => ({
+        id: f.id,
+        name: f.name,
+        key: f.key,
+        type: f.type,
+        options: f.options || [],
+        categoryId: f.category_id,
+      })));
+    }
+  };
+
   const handleLogin = async () => {
     if (!email || !password) {
       setAuthError('E-mail və şifrə daxil edin');
@@ -160,40 +192,6 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
     setProducts([]);
   };
 
-  const handleSeedDatabase = async () => {
-    if (!confirm('Nümunə məhsulları Supabase-ə yükləmək istədiyinizə əminsiniz?')) return;
-    
-    setIsLoading(true);
-    
-    const dbProducts = sampleProducts.map(p => ({
-      id: p.id,
-      name: p.name,
-      price: p.price,
-      original_price: p.originalPrice || null,
-      image: p.image,
-      category: p.category,
-      specs: p.specs,
-      badge: p.badge || null,
-      is_new: p.isNew || false,
-      is_bestseller: p.isBestseller || false,
-    }));
-
-    const { error } = await supabase
-      .from('products')
-      .upsert(dbProducts, { onConflict: 'id' });
-
-    setIsLoading(false);
-
-    if (error) {
-      alert('Xəta: ' + error.message);
-    } else {
-      setSuccess('Nümunə məhsullar yükləndi!');
-      fetchProducts();
-      window.dispatchEvent(new CustomEvent('adminProductsUpdated'));
-      setTimeout(() => setSuccess(''), 3000);
-    }
-  };
-
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -221,17 +219,6 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
 
     setForm((f) => ({ ...f, image: publicUrl }));
     setIsSubmitting(false);
-  };
-
-  const handleGalleryPick = (url: string) => { 
-    setPreviewUrl(url); 
-    setForm((f) => ({ ...f, image: url })); 
-  };
-  
-  const handleUrlInput = (val: string) => { 
-    setUrlInput(val); 
-    setPreviewUrl(val); 
-    setForm((f) => ({ ...f, image: val })); 
   };
 
   const addSpec = () => {
@@ -279,20 +266,17 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
     setSuccess(editId ? 'Yeniləndi!' : 'Əlavə edildi!');
     setForm(emptyProduct()); 
     setPreviewUrl(''); 
-    setUrlInput('');
     setEditId(null);
     setTimeout(() => setSuccess(''), 3000);
     fetchProducts();
     window.dispatchEvent(new CustomEvent('adminProductsUpdated'));
   };
 
-  // Düzəliş edəndə "Məhsul Əlavə Et" tab-ına keçir
   const handleEdit = (product: Product) => {
     setEditId(product.id); 
     setForm({ ...product });
     setPreviewUrl(product.image); 
-    setUrlInput(product.image);
-    setTab('add-product'); // Automatik olaraq əlavə et səhifəsinə keç
+    setTab('add-product');
   };
 
   const handleDelete = async (id: string) => {
@@ -354,6 +338,57 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
       alert('Xəta: ' + error.message);
     } else {
       fetchCategories();
+    }
+  };
+
+  const handleAddFilter = async () => {
+    if (!newFilterName.trim() || !newFilterKey.trim()) {
+      alert('Filter adı və açarı mütləqdir.');
+      return;
+    }
+
+    const key = newFilterKey.trim().toLowerCase().replace(/\s+/g, '_');
+    const options = newFilterOptions.split(',').map(o => o.trim()).filter(o => o);
+
+    const filterData = {
+      id: `filter-${Date.now()}`,
+      name: newFilterName.trim(),
+      key: key,
+      type: newFilterType,
+      options: options,
+      category_id: selectedCategoryForFilter || null,
+    };
+
+    const { error } = await supabase
+      .from('filters')
+      .insert(filterData);
+
+    if (error) {
+      alert('Filter əlavə xətası: ' + error.message);
+      return;
+    }
+
+    setNewFilterName('');
+    setNewFilterKey('');
+    setNewFilterOptions('');
+    setSelectedCategoryForFilter('');
+    setFilterSuccess('Filter əlavə edildi!');
+    setTimeout(() => setFilterSuccess(''), 3000);
+    fetchFilters();
+  };
+
+  const handleDeleteFilter = async (id: string) => {
+    if (!confirm('Filteri silmək istədiyinizə əminsiniz?')) return;
+    
+    const { error } = await supabase
+      .from('filters')
+      .delete()
+      .eq('id', id);
+    
+    if (error) {
+      alert('Xəta: ' + error.message);
+    } else {
+      fetchFilters();
     }
   };
 
@@ -420,7 +455,7 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
   return (
     <div className="fixed inset-0 z-[100] bg-black/70 flex items-center justify-center p-2 sm:p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[95vh] sm:h-[92vh] flex flex-col overflow-hidden">
-        {/* Header - Mobil üçün optimallaşdırıldı */}
+        {/* Header - NÜMUNƏLƏRİ YÜKLƏ DÜYMƏSİ SİLİNDİ */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 bg-[#0B1220] flex-shrink-0 gap-3 sm:gap-0">
           <div className="flex items-center gap-2 sm:gap-4 overflow-x-auto pb-2 sm:pb-0 scrollbar-hide">
             <h2 className="font-bold text-white text-sm sm:text-base whitespace-nowrap">Admin Panel</h2>
@@ -428,7 +463,8 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
               {([
                 { id: 'add-product', label: 'Məhsul Əlavə Et', icon: Plus },
                 { id: 'manage-products', label: 'Məhsullar', icon: List },
-                { id: 'categories', label: 'Kateqoriyalar', icon: Tag }
+                { id: 'categories', label: 'Kateqoriyalar', icon: Tag },
+                { id: 'filters', label: 'Filterlər', icon: Filter }
               ] as const).map((t) => (
                 <button 
                   key={t.id} 
@@ -442,15 +478,6 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
             </div>
           </div>
           <div className="flex items-center gap-2 justify-end">
-            <button 
-              onClick={handleSeedDatabase}
-              disabled={isLoading}
-              className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 text-green-400 hover:text-green-300 text-xs rounded-lg hover:bg-white/10 transition-colors disabled:opacity-50"
-              title="Nümunə məhsulları yüklə"
-            >
-              <Database className="w-3.5 h-3.5" /> 
-              <span className="hidden sm:inline">Nümunələri Yüklə</span>
-            </button>
             <button 
               onClick={handleLogout} 
               className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 text-white/50 hover:text-white text-xs rounded-lg hover:bg-white/10 transition-colors"
@@ -472,7 +499,7 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
           </div>
         ) : (
           <div className="flex-1 overflow-hidden relative">
-            {/* Add Product Tab - Scrollable */}
+            {/* Add Product Tab */}
             {tab === 'add-product' && (
               <div className="h-full overflow-y-auto p-4 sm:p-6 bg-white">
                 <div className="max-w-2xl mx-auto space-y-4 sm:space-y-5 pb-20">
@@ -564,72 +591,25 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                     </label>
                   </div>
 
-                  {/* Image Section */}
+                  {/* Şəkil Yükləmə */}
                   <div>
                     <label className="block text-xs font-semibold text-gray-500 mb-2">Şəkil *</label>
-                    <div className="flex gap-1 mb-3 bg-gray-50 rounded-lg p-1">
-                      {[
-                        { id: 'upload', icon: <Upload className="w-3.5 h-3.5" />, label: 'Yüklə' },
-                        { id: 'gallery', icon: <Images className="w-3.5 h-3.5" />, label: 'Qaleriya' },
-                        { id: 'url', icon: null, label: 'URL' },
-                      ].map((t) => (
-                        <button 
-                          key={t.id} 
-                          onClick={() => setImageMode(t.id as typeof imageMode)}
-                          className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-all ${imageMode === t.id ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-900'}`}
-                        >
-                          {t.icon}{t.label}
-                        </button>
-                      ))}
+                    
+                    <div 
+                      onClick={() => !isSubmitting && fileRef.current?.click()}
+                      className={`border-2 border-dashed border-gray-300 rounded-xl p-6 text-center transition-all ${isSubmitting ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:border-blue-500 hover:bg-blue-50'}`}
+                    >
+                      {isSubmitting ? <Loader2 className="w-8 h-8 text-gray-400 mx-auto mb-2 animate-spin" /> : <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />}
+                      <p className="text-sm text-gray-500">Şəkil seçmək üçün klikləyin</p>
+                      <p className="text-xs text-gray-400 mt-1">PNG, JPG, WEBP dəstəklənir</p>
+                      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} disabled={isSubmitting} />
                     </div>
-
-                    {imageMode === 'upload' && (
-                      <div 
-                        onClick={() => !isSubmitting && fileRef.current?.click()}
-                        className={`border-2 border-dashed border-gray-300 rounded-xl p-6 text-center transition-all ${isSubmitting ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:border-blue-500 hover:bg-blue-50'}`}
-                      >
-                        {isSubmitting ? <Loader2 className="w-8 h-8 text-gray-400 mx-auto mb-2 animate-spin" /> : <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />}
-                        <p className="text-sm text-gray-500">Şəkil seçmək üçün klikləyin</p>
-                        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} disabled={isSubmitting} />
-                      </div>
-                    )}
-
-                    {imageMode === 'gallery' && (
-                      <div className="grid grid-cols-2 gap-3">
-                        {GALLERY_IMAGES.map((img) => (
-                          <button 
-                            key={img.id} 
-                            onClick={() => handleGalleryPick(img.url)}
-                            className={`relative aspect-video rounded-lg overflow-hidden border-2 transition-all ${form.image === img.url ? 'border-blue-600 shadow-md' : 'border-transparent hover:border-blue-400'}`}
-                          >
-                            <img src={img.url} alt={img.label} className="w-full h-full object-cover" />
-                            {form.image === img.url && (
-                              <div className="absolute inset-0 bg-blue-600/20 flex items-center justify-center">
-                                <div className="bg-blue-600 text-white rounded-full p-1">
-                                  <Plus className="w-4 h-4 rotate-45" />
-                                </div>
-                              </div>
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-                    {imageMode === 'url' && (
-                      <input 
-                        type="url" 
-                        value={urlInput} 
-                        onChange={(e) => handleUrlInput(e.target.value)}
-                        placeholder="https://..."
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500" 
-                      />
-                    )}
 
                     {previewUrl && (
                       <div className="mt-3 relative">
                         <img src={previewUrl} alt="preview" className="w-full h-40 sm:h-48 object-cover rounded-xl border border-gray-200" />
                         <button 
-                          onClick={() => { setPreviewUrl(''); setForm((f) => ({ ...f, image: '' })); setUrlInput(''); }}
+                          onClick={() => { setPreviewUrl(''); setForm((f) => ({ ...f, image: '' })); }}
                           className="absolute top-2 right-2 p-1.5 bg-black/60 text-white rounded-full hover:bg-black/80"
                         >
                           <X className="w-4 h-4" />
@@ -685,7 +665,7 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                     
                     {editId && (
                       <button 
-                        onClick={() => { setEditId(null); setForm(emptyProduct()); setPreviewUrl(''); setUrlInput(''); }}
+                        onClick={() => { setEditId(null); setForm(emptyProduct()); setPreviewUrl(''); }}
                         className="py-3 px-4 text-sm text-gray-500 hover:text-gray-900 transition-colors border border-gray-200 rounded-xl"
                       >
                         Ləğv et
@@ -696,7 +676,7 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
               </div>
             )}
 
-            {/* Manage Products Tab - Scrollable */}
+            {/* Manage Products Tab - NÜMUNƏLƏRİ YÜKLƏ MƏTNİ SİLİNDİ */}
             {tab === 'manage-products' && (
               <div className="h-full overflow-y-auto p-4 sm:p-6 bg-gray-50">
                 <div className="max-w-4xl mx-auto">
@@ -714,7 +694,7 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                     <div className="flex flex-col items-center justify-center h-64 text-center bg-white rounded-xl border border-dashed border-gray-300 p-6">
                       <Package className="w-12 h-12 text-gray-300 mb-3" />
                       <p className="text-gray-500 text-sm">Məhsul yoxdur.</p>
-                      <p className="text-gray-400 text-xs mt-1 mb-4">Yuxarıdakı "Nümunələri Yüklə" düyməsinə basın və ya yeni əlavə edin.</p>
+                      <p className="text-gray-400 text-xs mt-1 mb-4">Yeni məhsul əlavə etmək üçün yuxarıdan "Məhsul Əlavə Et" seçin.</p>
                       <button 
                         onClick={() => setTab('add-product')}
                         className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700"
@@ -764,7 +744,6 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
             {tab === 'categories' && (
               <div className="h-full overflow-y-auto p-4 sm:p-6 bg-gray-50">
                 <div className="max-w-4xl mx-auto flex flex-col lg:flex-row gap-6">
-                  {/* Form */}
                   <div className="w-full lg:w-[360px] flex-shrink-0 bg-white rounded-xl border border-gray-200 p-5 h-fit">
                     <h3 className="font-semibold text-gray-900 text-base mb-4">Yeni Kateqoriya</h3>
                     {catSuccess && <div className="px-4 py-3 bg-green-50 text-green-700 rounded-xl text-sm font-medium mb-4">✓ {catSuccess}</div>}
@@ -798,7 +777,6 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                     </div>
                   </div>
 
-                  {/* List */}
                   <div className="flex-1">
                     <h3 className="font-semibold text-gray-900 text-base mb-4">Kateqoriyalar</h3>
                     <div className="space-y-2 pb-10">
@@ -832,9 +810,175 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                 </div>
               </div>
             )}
+
+            {/* Filters Tab */}
+            {tab === 'filters' && (
+              <div className="h-full overflow-y-auto p-4 sm:p-6 bg-gray-50">
+                <div className="max-w-4xl mx-auto flex flex-col lg:flex-row gap-6">
+                  <div className="w-full lg:w-[380px] flex-shrink-0 bg-white rounded-xl border border-gray-200 p-5 h-fit">
+                    <h3 className="font-semibold text-gray-900 text-base mb-4">Yeni Filter Əlavə Et</h3>
+                    {filterSuccess && <div className="px-4 py-3 bg-green-50 text-green-700 rounded-xl text-sm font-medium mb-4">✓ {filterSuccess}</div>}
+
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-500 mb-1.5">Filter adı *</label>
+                        <input 
+                          type="text" 
+                          value={newFilterName} 
+                          onChange={(e) => {
+                            setNewFilterName(e.target.value);
+                            if (!newFilterKey) {
+                              setNewFilterKey(e.target.value.toLowerCase().replace(/\s+/g, '_'));
+                            }
+                          }}
+                          placeholder="Məsələn: Yaddaş (RAM)"
+                          className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500" 
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-500 mb-1.5">Açar (Key) *</label>
+                        <input 
+                          type="text" 
+                          value={newFilterKey} 
+                          onChange={(e) => setNewFilterKey(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
+                          placeholder="masalan: ram, storage, color"
+                          className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500" 
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-500 mb-1.5">Tip</label>
+                        <select 
+                          value={newFilterType}
+                          onChange={(e) => setNewFilterType(e.target.value as 'select' | 'checkbox' | 'range')}
+                          className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500"
+                        >
+                          <option value="select">Seçim (Select)</option>
+                          <option value="checkbox">Qutu (Checkbox)</option>
+                          <option value="range">Aralıq (Range)</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-500 mb-1.5">Kateqoriya (İstəyə bağlı)</label>
+                        <select 
+                          value={selectedCategoryForFilter}
+                          onChange={(e) => setSelectedCategoryForFilter(e.target.value)}
+                          className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500"
+                        >
+                          <option value="">Bütün kateqoriyalar</option>
+                          {allCategories.map((c) => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {newFilterType !== 'range' && (
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-500 mb-1.5">Seçimlər (vergüllə ayırın)</label>
+                          <textarea 
+                            value={newFilterOptions}
+                            onChange={(e) => setNewFilterOptions(e.target.value)}
+                            placeholder="8GB, 16GB, 32GB, 64GB"
+                            className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500 resize-none h-20"
+                          />
+                        </div>
+                      )}
+
+                      <button 
+                        onClick={handleAddFilter} 
+                        className="w-full flex items-center justify-center gap-2 py-3 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 text-sm"
+                      >
+                        <Filter className="w-4 h-4" /> Filter Əlavə Et
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-gray-900 text-base mb-4">Mövcud Filterlər ({filters.length})</h3>
+                    <div className="space-y-3 pb-10">
+                      {filters.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-40 text-center bg-white rounded-xl border border-dashed border-gray-300 p-6">
+                          <Filter className="w-10 h-10 text-gray-300 mb-2" />
+                          <p className="text-gray-500 text-sm">Hələ filter yoxdur.</p>
+                        </div>
+                      ) : (
+                        filters.map((filter) => (
+                          <div key={filter.id} className="flex items-start gap-3 px-4 py-4 bg-white rounded-xl border border-gray-200 shadow-sm">
+                            <div className="p-2 bg-purple-50 rounded-lg">
+                              <Filter className="w-4 h-4 text-purple-600" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <h4 className="font-medium text-gray-900 text-sm">{filter.name}</h4>
+                                <span className="text-[10px] px-2 py-0.5 bg-gray-100 rounded text-gray-500 uppercase">{filter.type}</span>
+                              </div>
+                              <p className="text-xs text-gray-500 mb-2">Key: <span className="font-mono bg-gray-100 px-1 rounded">{filter.key}</span></p>
+                              
+                              {filter.options && filter.options.length > 0 && (
+                                <div className="flex flex-wrap gap-1">
+                                  {filter.options.map((opt, idx) => (
+                                    <span key={idx} className="text-[10px] px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full border border-blue-100">
+                                      {opt}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            <button 
+                              onClick={() => handleDeleteFilter(filter.id)} 
+                              className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg flex-shrink-0"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
     </div>
   );
 }
+// emptyProduct funksiyasına əlavə et:
+const emptyProduct = (): Omit<Product, 'id'> & { description?: string } => ({
+  name: '', price: 0, originalPrice: undefined,
+  image: '', category: 'gaming', specs: {},
+  badge: '', isNew: false, isBestseller: false,
+  description: '', // ƏLAVƏ EDİLDİ
+});
+
+// State əlavə et (form state-inin yanına):
+const [description, setDescription] = useState(''); // ƏLAVƏ EDİLDİ
+
+// handleSubmit içində productData-ya əlavə et:
+const productData = {
+  id: editId || `admin-${Date.now()}`,
+  name: form.name,
+  price: form.price,
+  original_price: form.originalPrice || null,
+  image: form.image,
+  category: form.category,
+  specs: form.specs,
+  badge: form.badge || null,
+  is_new: form.isNew,
+  is_bestseller: form.isBestseller,
+  description: description || null, // ƏLAVƏ EDİLDİ
+};
+
+// Form render hissəsində (specs-in altına əlavə et):
+<div>
+  <label className="block text-xs font-semibold text-gray-500 mb-1.5">Ətraflı Təsvir</label>
+  <textarea
+    value={description}
+    onChange={(e) => setDescription(e.target.value)}
+    placeholder="Məhsul haqqında ətraflı məlumat..."
+    className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500 min-h-[100px] resize-y"
+  />
+</div>

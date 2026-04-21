@@ -1,4 +1,6 @@
+
 import { useState, useCallback } from 'react';
+import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
 import Navbar from './components/landing/Navbar';
 import Hero from './components/landing/Hero';
 import LogoCloud from './components/landing/LogoCloud';
@@ -9,7 +11,34 @@ import Pricing from './components/landing/Pricing';
 import Footer from './components/landing/Footer';
 import AdminPanel from './components/landing/AdminPanel';
 import CartModal, { type CartItem } from './components/landing/CartModal';
+import ProductDetail from './components/landing/ProductDetail';
 import type { Product } from './data/products';
+
+// Ana səhifə komponenti
+function HomePage({ 
+  onAddToCart, 
+  externalCategory, 
+  onExternalCategoryConsumed 
+}: { 
+  onAddToCart: (product: Product) => void;
+  externalCategory: string | null;
+  onExternalCategoryConsumed: () => void;
+}) {
+  return (
+    <main>
+      <Hero />
+      <LogoCloud />
+      <ProductsSection
+        onAddToCart={onAddToCart}
+        externalCategory={externalCategory}
+        onExternalCategoryConsumed={onExternalCategoryConsumed}
+      />
+      <Features />
+      <HowItWorks />
+      <Pricing />
+    </main>
+  );
+}
 
 function App() {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
@@ -38,6 +67,7 @@ function App() {
         },
       ];
     });
+    setShowCart(true); // Avtomatik səbəti aç
   }, []);
 
   const handleRemoveFromCart = useCallback((id: string) => {
@@ -47,38 +77,54 @@ function App() {
   const handleCategorySelect = useCallback((categoryId: string) => {
     setActiveCategory(categoryId);
     setTimeout(() => {
-      document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }, 50);
   }, []);
 
   return (
-    <div className="min-h-screen bg-background">
-      <Navbar
-        cartCount={cartCount}
-        onCartClick={() => setShowCart(true)}
-        onCategorySelect={handleCategorySelect}
-      />
-      <main>
-        <Hero />
-        <LogoCloud />
-        <ProductsSection
-          onAddToCart={handleAddToCart}
-          externalCategory={activeCategory}
-          onExternalCategoryConsumed={() => setActiveCategory(null)}
+    <BrowserRouter>
+      <div className="min-h-screen bg-background">
+        <Navbar
+          cartCount={cartCount}
+          onCartClick={() => setShowCart(true)}
+          onCategorySelect={handleCategorySelect}
         />
-        <Features />
-        <HowItWorks />
-        <Pricing />
-      </main>
-      <Footer onAdminClick={() => setShowAdmin(true)} />
-      {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
-      <CartModal
-        isOpen={showCart}
-        onClose={() => setShowCart(false)}
-        items={cartItems}
-        onRemove={handleRemoveFromCart}
-      />
-    </div>
+        
+        <Routes>
+          <Route 
+            path="/" 
+            element={
+              <HomePage 
+                onAddToCart={handleAddToCart}
+                externalCategory={activeCategory}
+                onExternalCategoryConsumed={() => setActiveCategory(null)}
+              />
+            } 
+          />
+          <Route 
+            path="/product/:id" 
+            element={
+              <ProductDetail 
+                onAddToCart={handleAddToCart}
+                cartCount={cartCount}
+                onCartClick={() => setShowCart(true)}
+              />
+            } 
+          />
+        </Routes>
+
+        <Footer onAdminClick={() => setShowAdmin(true)} />
+        
+        {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
+        
+        <CartModal
+          isOpen={showCart}
+          onClose={() => setShowCart(false)}
+          items={cartItems}
+          onRemove={handleRemoveFromCart}
+        />
+      </div>
+    </BrowserRouter>
   );
 }
 

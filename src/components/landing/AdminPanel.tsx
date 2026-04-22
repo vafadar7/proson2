@@ -1,16 +1,23 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   X, Plus, Trash2, Upload, Save, Eye, ChevronDown, 
-  LogOut, Tag, FolderPlus, Loader2, Package, List, Filter
+  LogOut, Tag, FolderPlus, Loader2, Package, List, Filter, AlertTriangle
 } from 'lucide-react';
-import { categories as defaultCategories, products as sampleProducts } from '../../data/products';
+import { categories as defaultCategories } from '../../data/products';
 import type { Product, Category } from '../../data/products';
 import { supabase } from '../../lib/supabase';
 
-const emptyProduct = (): Omit<Product, 'id'> => ({
+// localStorage açarları
+const STORAGE_KEYS = {
+  PRODUCT_FORM: 'admin_product_form_draft',
+  EDIT_ID: 'admin_edit_id_draft'
+};
+
+const emptyProduct = (): Omit<Product, 'id'> & { description?: string } => ({
   name: '', price: 0, originalPrice: undefined,
   image: '', category: 'gaming', specs: {},
   badge: '', isNew: false, isBestseller: false,
+  description: '',
 });
 
 type Tab = 'add-product' | 'manage-products' | 'categories' | 'filters';
@@ -34,10 +41,11 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
   const [authError, setAuthError] = useState('');
   const [isLoadingAuth, setIsLoadingAuth] = useState(false);
 
-  // Data state
+  // Data state - xəta baş verəndə mövcud məlumatları saxlamaq üçün
   const [products, setProducts] = useState<Product[]>([]);
   const [customCategories, setCustomCategories] = useState<Category[]>([]);
   const [filters, setFilters] = useState<FilterType[]>([]);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const allCategories = [...defaultCategories, ...customCategories];
   const [isLoading, setIsLoading] = useState(true);
 
@@ -50,6 +58,7 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
   const [success, setSuccess] = useState('');
   const [editId, setEditId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // New category form
@@ -65,6 +74,51 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
   const [selectedCategoryForFilter, setSelectedCategoryForFilter] = useState('');
   const [filterSuccess, setFilterSuccess] = useState('');
 
+  // localStorage-dan form məlumatlarını bərpa et
+  useEffect(() => {
+    const savedForm = localStorage.getItem(STORAGE_KEYS.PRODUCT_FORM);
+    const savedEditId = localStorage.getItem(STORAGE_KEYS.EDIT_ID);
+    
+    if (savedForm) {
+      try {
+        const parsed = JSON.parse(savedForm);
+        setForm(parsed);
+        if (parsed.image) setPreviewUrl(parsed.image);
+        setHasUnsavedChanges(true);
+      } catch (e) {
+        console.error('Form bərpa xətası:', e);
+      }
+    }
+    
+    if (savedEditId) {
+      setEditId(savedEditId);
+    }
+  }, []);
+
+  // Form dəyişəndə localStorage-a yaz
+  useEffect(() => {
+    if (hasUnsavedChanges || form.name || form.image) {
+      localStorage.setItem(STORAGE_KEYS.PRODUCT_FORM, JSON.stringify(form));
+      if (editId) {
+        localStorage.setItem(STORAGE_KEYS.EDIT_ID, editId);
+      } else {
+        localStorage.removeItem(STORAGE_KEYS.EDIT_ID);
+      }
+    }
+  }, [form, editId, hasUnsavedChanges]);
+
+  // Səhifədən çıxarkən xəbərdarlıq
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedChanges]);
+
   // Check auth on mount
   useEffect(() => {
     checkAuth();
@@ -78,86 +132,116 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
   }, [isLoggedIn]);
 
   const checkAuth = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session) {
-      setIsLoggedIn(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        setIsLoggedIn(true);
+      }
+    } catch (error) {
+      console.error('Auth yoxlama xətası:', error);
     }
   };
 
   const fetchData = async () => {
     setIsLoading(true);
-    await Promise.all([fetchProducts(), fetchCategories(), fetchFilters()]);
-    setIsLoading(false);
+    setFetchError(null);
+    
+    try {
+      // Bütün fetch-ləri paralel et, amma xəta baş verəndə mövcud məlumatları saxla
+      await Promise.all([
+        fetchProducts(),
+        fetchCategories(),
+        fetchFilters()
+      ]);
+    } catch (error) {
+      console.error('Data fetch xətası:', error);
+      setFetchError('Məlumatları yükləmək mümkün olmadı. İnternet bağlantınızı yoxlayın.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const fetchProducts = async () => {
-    const { data, error } = await supabase
-      .from('products')
-      .select('*')
-      .order('created_at', { ascending: false });
-    
-    if (error) {
-      console.error('Error:', error);
-      return;
-    }
-    
-    if (data) {
-      const transformed = data.map((p: any) => ({
-        id: p.id,
-        name: p.name,
-        price: p.price,
-        originalPrice: p.original_price,
-        image: p.image,
-        category: p.category,
-        specs: p.specs || {},
-        badge: p.badge,
-        isNew: p.is_new,
-        isBestseller: p.is_bestseller,
-      }));
-      setProducts(transformed);
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      
+      if (data) {
+        const transformed = data.map((p: any) => ({
+          id: p.id,
+          name: p.name,
+          price: p.price,
+          originalPrice: p.original_price,
+          image: p.image,
+          category: p.category,
+          specs: p.specs || {},
+          badge: p.badge,
+          isNew: p.is_new,
+          isBestseller: p.is_bestseller,
+          description: p.description || '',
+        }));
+        setProducts(transformed);
+        setFetchError(null); // Uğurlu olduqda xətanı təmizlə
+      }
+    } catch (error: any) {
+      console.error('Products fetch xətası:', error);
+      // Xəta baş verəndə mövcud məhsulları silmə, köhnəni saxla
+      if (products.length === 0) {
+        setFetchError('Məhsulları yükləmək mümkün olmadı');
+      }
+      throw error;
     }
   };
 
   const fetchCategories = async () => {
-    const { data, error } = await supabase
-      .from('categories')
-      .select('*')
-      .eq('is_custom', true);
-    
-    if (error) {
-      console.error('Error:', error);
-      return;
-    }
-    
-    if (data) {
-      setCustomCategories(data.map((c: any) => ({
-        id: c.id,
-        name: c.name,
-        filters: c.filters || [],
-      })));
+    try {
+      const { data, error } = await supabase
+        .from('categories')
+        .select('*')
+        .eq('is_custom', true);
+      
+      if (error) throw error;
+      
+      if (data) {
+        setCustomCategories(data.map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          filters: c.filters || [],
+        })));
+      }
+    } catch (error) {
+      console.error('Categories fetch xətası:', error);
+      // Xəta baş verəndə mövcud kateqoriyaları saxla
+      throw error;
     }
   };
 
   const fetchFilters = async () => {
-    const { data, error } = await supabase
-      .from('filters')
-      .select('*')
-      .order('created_at', { ascending: false });
-    
-    if (error) {
-      console.error('Filter fetch error:', error);
-      return;
-    }
-    
-    if (data) {
-      setFilters(data.map((f: any) => ({
-        id: f.id,
-        name: f.name,
-        key: f.key,
-        type: f.type,
-        options: f.options || [],
-        categoryId: f.category_id,
-      })));
+    try {
+      const { data, error } = await supabase
+        .from('filters')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      
+      if (data) {
+        setFilters(data.map((f: any) => ({
+          id: f.id,
+          name: f.name,
+          key: f.key,
+          type: f.type,
+          options: f.options || [],
+          categoryId: f.category_id,
+        })));
+      }
+    } catch (error) {
+      console.error('Filter fetch xətası:', error);
+      throw error;
     }
   };
 
@@ -170,31 +254,54 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
     setIsLoadingAuth(true);
     setAuthError('');
     
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    
-    setIsLoadingAuth(false);
-    
-    if (error) {
-      setAuthError('E-mail və ya şifrə yanlışdır');
-    } else {
-      setIsLoggedIn(true);
-      setEmail('');
-      setPassword('');
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      
+      if (error) {
+        setAuthError('E-mail və ya şifrə yanlışdır');
+      } else {
+        setIsLoggedIn(true);
+        setEmail('');
+        setPassword('');
+      }
+    } catch (error) {
+      setAuthError('Giriş zamanı xəta baş verdi');
+    } finally {
+      setIsLoadingAuth(false);
     }
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setIsLoggedIn(false);
-    setProducts([]);
+    try {
+      await supabase.auth.signOut();
+      setIsLoggedIn(false);
+      setProducts([]);
+      // localStorage təmizlə
+      localStorage.removeItem(STORAGE_KEYS.PRODUCT_FORM);
+      localStorage.removeItem(STORAGE_KEYS.EDIT_ID);
+    } catch (error) {
+      console.error('Çıxış xətası:', error);
+    }
   };
 
+  // Şəkil yükləmə - transaction mantığı ilə
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // Fayl yoxlaması
+    if (!file.type.startsWith('image/')) {
+      alert('Zəhmət olmasa şəkil faylı seçin (PNG, JPG, WEBP)');
+      return;
+    }
+    
+    if (file.size > 5 * 1024 * 1024) { // 5MB limit
+      alert('Şəkil həcmi 5MB-dan böyük ola bilməz');
+      return;
+    }
 
     const tempUrl = URL.createObjectURL(file);
     setPreviewUrl(tempUrl);
@@ -202,193 +309,323 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
     
     const fileExt = file.name.split('.').pop();
     const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+    let uploadedPath = '';
 
-    const { error: uploadError } = await supabase.storage
-      .from('product-images')
-      .upload(fileName, file);
+    try {
+      const { error: uploadError, data } = await supabase.storage
+        .from('product-images')
+        .upload(fileName, file);
 
-    if (uploadError) {
-      alert('Yükləmə xətası: ' + uploadError.message);
+      if (uploadError) throw uploadError;
+      
+      uploadedPath = fileName;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('product-images')
+        .getPublicUrl(fileName);
+
+      setForm((f) => ({ ...f, image: publicUrl }));
+      setHasUnsavedChanges(true);
+    } catch (error: any) {
+      alert('Şəkil yükləmə xətası: ' + error.message);
+      setPreviewUrl('');
+      // Xəta baş verəndə temp faylı təmizlə
+      URL.revokeObjectURL(tempUrl);
+    } finally {
       setIsSubmitting(false);
-      return;
     }
-
-    const { data: { publicUrl } } = supabase.storage
-      .from('product-images')
-      .getPublicUrl(fileName);
-
-    setForm((f) => ({ ...f, image: publicUrl }));
-    setIsSubmitting(false);
   };
 
   const addSpec = () => {
     if (!specKey || !specVal) return;
     setForm((f) => ({ ...f, specs: { ...f.specs, [specKey]: specVal } }));
-    setSpecKey(''); setSpecVal('');
+    setSpecKey(''); 
+    setSpecVal('');
+    setHasUnsavedChanges(true);
   };
   
-  const removeSpec = (key: string) => setForm((f) => { 
-    const s = { ...f.specs }; delete s[key]; return { ...f, specs: s }; 
-  });
+  const removeSpec = (key: string) => {
+    setForm((f) => { 
+      const s = { ...f.specs }; 
+      delete s[key]; 
+      return { ...f, specs: s }; 
+    });
+    setHasUnsavedChanges(true);
+  };
+
+  const clearForm = useCallback(() => {
+    setForm(emptyProduct());
+    setPreviewUrl('');
+    setEditId(null);
+    setSpecKey('');
+    setSpecVal('');
+    setHasUnsavedChanges(false);
+    localStorage.removeItem(STORAGE_KEYS.PRODUCT_FORM);
+    localStorage.removeItem(STORAGE_KEYS.EDIT_ID);
+  }, []);
 
   const handleSubmit = async () => {
-    if (!form.name || !form.price || !form.image) { 
-      alert('Ad, qiymət və şəkil mütləqdir.'); 
-      return; 
+    // Validasiya
+    if (!form.name.trim()) {
+      alert('Məhsul adı mütləqdir');
+      return;
+    }
+    if (!form.price || form.price <= 0) {
+      alert('Qiymət müsbət rəqəm olmalıdır');
+      return;
+    }
+    if (!form.image) {
+      alert('Şəkil mütləqdir');
+      return;
     }
 
     setIsSubmitting(true);
     
-    const productData = {
-      id: editId || `admin-${Date.now()}`,
-      name: form.name,
-      price: form.price,
-      original_price: form.originalPrice || null,
-      image: form.image,
-      category: form.category,
-      specs: form.specs,
-      badge: form.badge || null,
-      is_new: form.isNew,
-      is_bestseller: form.isBestseller,
-    };
+    try {
+      const productData = {
+        id: editId || `admin-${Date.now()}`,
+        name: form.name.trim(),
+        price: Number(form.price),
+        original_price: form.originalPrice || null,
+        image: form.image,
+        category: form.category,
+        specs: form.specs,
+        badge: form.badge?.trim() || null,
+        is_new: form.isNew,
+        is_bestseller: form.isBestseller,
+        description: form.description?.trim() || null,
+        updated_at: new Date().toISOString(),
+        ...(editId ? {} : { created_at: new Date().toISOString() })
+      };
 
-    const { error } = await supabase
-      .from('products')
-      .upsert(productData);
+      const { error } = await supabase
+        .from('products')
+        .upsert(productData, { 
+          onConflict: 'id',
+          ignoreDuplicates: false 
+        });
 
-    setIsSubmitting(false);
+      if (error) throw error;
 
-    if (error) {
-      alert('Xəta: ' + error.message);
-      return;
+      // Uğurlu olduqda localStorage təmizlə
+      clearForm();
+      setSuccess(editId ? 'Məhsul yeniləndi!' : 'Məhsul əlavə edildi!');
+      setTimeout(() => setSuccess(''), 3000);
+      
+      // Siyahını yenilə
+      await fetchProducts();
+      window.dispatchEvent(new CustomEvent('adminProductsUpdated'));
+      
+    } catch (error: any) {
+      alert('Xəta baş verdi: ' + (error.message || 'Məlum olmayan xəta'));
+      console.error('Submit xətası:', error);
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setSuccess(editId ? 'Yeniləndi!' : 'Əlavə edildi!');
-    setForm(emptyProduct()); 
-    setPreviewUrl(''); 
-    setEditId(null);
-    setTimeout(() => setSuccess(''), 3000);
-    fetchProducts();
-    window.dispatchEvent(new CustomEvent('adminProductsUpdated'));
   };
 
   const handleEdit = (product: Product) => {
-    setEditId(product.id); 
-    setForm({ ...product });
-    setPreviewUrl(product.image); 
+    setEditId(product.id);
+    setForm({
+      name: product.name,
+      price: product.price,
+      originalPrice: product.originalPrice,
+      image: product.image,
+      category: product.category,
+      specs: product.specs || {},
+      badge: product.badge || '',
+      isNew: product.isNew || false,
+      isBestseller: product.isBestseller || false,
+      description: (product as any).description || '',
+    });
+    setPreviewUrl(product.image);
+    setHasUnsavedChanges(true);
     setTab('add-product');
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Silmək istədiyinizə əminsiniz?')) return;
+    // Dəqiq təsdiq dialoqu
+    const product = products.find(p => p.id === id);
+    const confirmMessage = product 
+      ? `"${product.name}" məhsulunu silmək istədiyinizə əminsiniz? Bu əməliyyat geri alına bilməz!`
+      : 'Bu məhsulu silmək istədiyinizə əminsiniz?';
+    
+    if (!confirm(confirmMessage)) return;
     
     setIsSubmitting(true);
-    const { error } = await supabase
-      .from('products')
-      .delete()
-      .eq('id', id);
     
-    setIsSubmitting(false);
-    
-    if (error) {
-      alert('Silinmə xətası: ' + error.message);
-    } else {
-      fetchProducts();
+    try {
+      // Əvvəlcə şəkili sil (opsional - əgər başqa məhsul istifadə etmirse)
+      // Bunu əlavə edə bilərsiniz əgər orphan şəkilləri təmizləmək istəyirsinizsə
+      
+      const { error } = await supabase
+        .from('products')
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
+      
+      // Lokal state-dən sil
+      setProducts(prev => prev.filter(p => p.id !== id));
+      setSuccess('Məhsul silindi');
+      setTimeout(() => setSuccess(''), 3000);
+      
       window.dispatchEvent(new CustomEvent('adminProductsUpdated'));
+    } catch (error: any) {
+      alert('Silinmə xətası: ' + error.message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleAddCategory = async () => {
     if (!newCatName.trim() || !newCatId.trim()) { 
-      alert('Ad və ID mütləqdir.'); 
+      alert('Ad və ID mütləqdir'); 
       return; 
     }
     
     const id = newCatId.trim().toLowerCase().replace(/\s+/g, '-');
+    
+    // Duplicate yoxlaması
     if (allCategories.find(c => c.id === id)) { 
-      alert('Bu ID artıq var.'); 
+      alert('Bu ID artıq mövcuddur'); 
       return; 
     }
 
-    const { error } = await supabase
-      .from('categories')
-      .insert({ id, name: newCatName.trim(), filters: [], is_custom: true });
+    setIsSubmitting(true);
+    
+    try {
+      const { error } = await supabase
+        .from('categories')
+        .insert({ 
+          id, 
+          name: newCatName.trim(), 
+          filters: [], 
+          is_custom: true,
+          created_at: new Date().toISOString()
+        });
 
-    if (error) {
-      alert('Xəta: ' + error.message);
-      return;
+      if (error) throw error;
+
+      setNewCatName(''); 
+      setNewCatId('');
+      setCatSuccess('Kateqoriya əlavə edildi!');
+      setTimeout(() => setCatSuccess(''), 3000);
+      await fetchCategories();
+    } catch (error: any) {
+      alert('Kateqoriya əlavə xətası: ' + error.message);
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setNewCatName(''); 
-    setNewCatId('');
-    setCatSuccess('Kateqoriya əlavə edildi!');
-    setTimeout(() => setCatSuccess(''), 3000);
-    fetchCategories();
   };
 
   const handleDeleteCategory = async (id: string) => {
-    if (!confirm('Kateqoriyanı silmək istədiyinizə əminsiniz?')) return;
+    // Standart kateqoriyaları silməyə icazə vermə
+    if (defaultCategories.find(c => c.id === id)) {
+      alert('Standart kateqoriyalar silinə bilməz');
+      return;
+    }
+
+    const cat = customCategories.find(c => c.id === id);
+    const confirmMessage = cat
+      ? `"${cat.name}" kateqoriyasını silmək istədiyinizə əminsiniz? Bu kateqoriyaya aid məhsullar kateqoriyasız qala bilər.`
+      : 'Bu kateqoriyanı silmək istədiyinizə əminsiniz?';
+
+    if (!confirm(confirmMessage)) return;
     
-    const { error } = await supabase
-      .from('categories')
-      .delete()
-      .eq('id', id);
+    setIsSubmitting(true);
     
-    if (error) {
-      alert('Xəta: ' + error.message);
-    } else {
-      fetchCategories();
+    try {
+      const { error } = await supabase
+        .from('categories')
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
+      
+      setCustomCategories(prev => prev.filter(c => c.id !== id));
+      setSuccess('Kateqoriya silindi');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (error: any) {
+      alert('Silinmə xətası: ' + error.message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleAddFilter = async () => {
     if (!newFilterName.trim() || !newFilterKey.trim()) {
-      alert('Filter adı və açarı mütləqdir.');
+      alert('Filter adı və açarı mütləqdir');
       return;
     }
 
     const key = newFilterKey.trim().toLowerCase().replace(/\s+/g, '_');
     const options = newFilterOptions.split(',').map(o => o.trim()).filter(o => o);
 
-    const filterData = {
-      id: `filter-${Date.now()}`,
-      name: newFilterName.trim(),
-      key: key,
-      type: newFilterType,
-      options: options,
-      category_id: selectedCategoryForFilter || null,
-    };
-
-    const { error } = await supabase
-      .from('filters')
-      .insert(filterData);
-
-    if (error) {
-      alert('Filter əlavə xətası: ' + error.message);
+    // Duplicate key yoxlaması
+    if (filters.find(f => f.key === key)) {
+      alert('Bu açar (key) artıq mövcuddur');
       return;
     }
 
-    setNewFilterName('');
-    setNewFilterKey('');
-    setNewFilterOptions('');
-    setSelectedCategoryForFilter('');
-    setFilterSuccess('Filter əlavə edildi!');
-    setTimeout(() => setFilterSuccess(''), 3000);
-    fetchFilters();
+    setIsSubmitting(true);
+
+    try {
+      const filterData = {
+        id: `filter-${Date.now()}`,
+        name: newFilterName.trim(),
+        key: key,
+        type: newFilterType,
+        options: options,
+        category_id: selectedCategoryForFilter || null,
+        created_at: new Date().toISOString()
+      };
+
+      const { error } = await supabase
+        .from('filters')
+        .insert(filterData);
+
+      if (error) throw error;
+
+      setNewFilterName('');
+      setNewFilterKey('');
+      setNewFilterOptions('');
+      setSelectedCategoryForFilter('');
+      setFilterSuccess('Filter əlavə edildi!');
+      setTimeout(() => setFilterSuccess(''), 3000);
+      await fetchFilters();
+    } catch (error: any) {
+      alert('Filter əlavə xətası: ' + error.message);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleDeleteFilter = async (id: string) => {
-    if (!confirm('Filteri silmək istədiyinizə əminsiniz?')) return;
+    const filter = filters.find(f => f.id === id);
+    const confirmMessage = filter
+      ? `"${filter.name}" filterini silmək istədiyinizə əminsiniz?`
+      : 'Bu filteri silmək istədiyinizə əminsiniz?';
+
+    if (!confirm(confirmMessage)) return;
     
-    const { error } = await supabase
-      .from('filters')
-      .delete()
-      .eq('id', id);
+    setIsSubmitting(true);
     
-    if (error) {
+    try {
+      const { error } = await supabase
+        .from('filters')
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
+      
+      setFilters(prev => prev.filter(f => f.id !== id));
+      setSuccess('Filter silindi');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (error: any) {
       alert('Xəta: ' + error.message);
-    } else {
-      fetchFilters();
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -440,11 +677,6 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
               {isLoadingAuth && <Loader2 className="w-4 h-4 animate-spin" />}
               {isLoadingAuth ? 'Giriş...' : 'Daxil Ol'}
             </button>
-            
-            <div className="text-xs text-gray-400 text-center mt-4 p-3 bg-gray-50 rounded-lg">
-              <p className="font-semibold text-gray-600 mb-1">Qeyd:</p>
-              <p>Supabase Authentication bölməsindən istifadəçi yaradın.</p>
-            </div>
           </div>
         </div>
       </div>
@@ -455,7 +687,7 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
   return (
     <div className="fixed inset-0 z-[100] bg-black/70 flex items-center justify-center p-2 sm:p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[95vh] sm:h-[92vh] flex flex-col overflow-hidden">
-        {/* Header - NÜMUNƏLƏRİ YÜKLƏ DÜYMƏSİ SİLİNDİ */}
+        {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 bg-[#0B1220] flex-shrink-0 gap-3 sm:gap-0">
           <div className="flex items-center gap-2 sm:gap-4 overflow-x-auto pb-2 sm:pb-0 scrollbar-hide">
             <h2 className="font-bold text-white text-sm sm:text-base whitespace-nowrap">Admin Panel</h2>
@@ -468,7 +700,14 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
               ] as const).map((t) => (
                 <button 
                   key={t.id} 
-                  onClick={() => setTab(t.id as Tab)}
+                  onClick={() => {
+                    if (hasUnsavedChanges && t.id !== 'add-product') {
+                      if (!confirm('Yadda saxlanmamış dəyişikliklər var. Çıxmaq istədiyinizə əminsiniz?')) {
+                        return;
+                      }
+                    }
+                    setTab(t.id as Tab);
+                  }}
                   className={`px-2 sm:px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap ${tab === t.id ? 'bg-white/15 text-white' : 'text-white/50 hover:text-white hover:bg-white/10'}`}
                 >
                   <t.icon className="w-3.5 h-3.5 hidden sm:block" />
@@ -478,6 +717,12 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
             </div>
           </div>
           <div className="flex items-center gap-2 justify-end">
+            {hasUnsavedChanges && (
+              <span className="text-[10px] px-2 py-1 bg-yellow-500/20 text-yellow-300 rounded-full flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" />
+                Yadda saxlanmamış
+              </span>
+            )}
             <button 
               onClick={handleLogout} 
               className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 text-white/50 hover:text-white text-xs rounded-lg hover:bg-white/10 transition-colors"
@@ -485,7 +730,15 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
               <LogOut className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Çıxış</span>
             </button>
             <button 
-              onClick={onClose} 
+              onClick={() => {
+                if (hasUnsavedChanges) {
+                  if (confirm('Yadda saxlanmamış dəyişikliklər var. Pəncərəni bağlamaq istədiyinizə əminsiniz?')) {
+                    onClose();
+                  }
+                } else {
+                  onClose();
+                }
+              }} 
               className="p-1.5 sm:p-2 text-white/50 hover:text-white transition-colors rounded-lg hover:bg-white/10"
             >
               <X className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -497,6 +750,17 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
           <div className="flex-1 flex items-center justify-center">
             <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
           </div>
+        ) : fetchError ? (
+          <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+            <AlertTriangle className="w-12 h-12 text-red-400 mb-4" />
+            <p className="text-red-600 font-medium mb-2">{fetchError}</p>
+            <button 
+              onClick={fetchData}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+            >
+              Yenidən cəhd et
+            </button>
+          </div>
         ) : (
           <div className="flex-1 overflow-hidden relative">
             {/* Add Product Tab */}
@@ -504,15 +768,24 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
               <div className="h-full overflow-y-auto p-4 sm:p-6 bg-white">
                 <div className="max-w-2xl mx-auto space-y-4 sm:space-y-5 pb-20">
                   <div className="flex items-center justify-between">
-                    <h3 className="font-semibold text-gray-900 text-base sm:text-lg">
-                      {editId ? 'Məhsulu Düzənlə' : 'Yeni Məhsul Əlavə Et'}
-                    </h3>
+                    <div>
+                      <h3 className="font-semibold text-gray-900 text-base sm:text-lg">
+                        {editId ? 'Məhsulu Düzənlə' : 'Yeni Məhsul Əlavə Et'}
+                      </h3>
+                      {editId && (
+                        <p className="text-xs text-gray-500 mt-1">ID: {editId}</p>
+                      )}
+                    </div>
                     {editId && (
                       <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full">Redaktə rejimi</span>
                     )}
                   </div>
                   
-                  {success && <div className="px-4 py-3 bg-green-50 text-green-700 rounded-xl text-sm font-medium">✓ {success}</div>}
+                  {success && (
+                    <div className="px-4 py-3 bg-green-50 text-green-700 rounded-xl text-sm font-medium flex items-center gap-2">
+                      <span>✓</span> {success}
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="sm:col-span-2">
@@ -520,7 +793,10 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                       <input 
                         type="text" 
                         value={form.name} 
-                        onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                        onChange={(e) => {
+                          setForm((f) => ({ ...f, name: e.target.value }));
+                          setHasUnsavedChanges(true);
+                        }}
                         className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500" 
                       />
                     </div>
@@ -529,17 +805,27 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                       <label className="block text-xs font-semibold text-gray-500 mb-1.5">Qiymət (AZN) *</label>
                       <input 
                         type="number" 
+                        min="0"
+                        step="0.01"
                         value={form.price || ''} 
-                        onChange={(e) => setForm((f) => ({ ...f, price: Number(e.target.value) }))}
+                        onChange={(e) => {
+                          setForm((f) => ({ ...f, price: Number(e.target.value) }));
+                          setHasUnsavedChanges(true);
+                        }}
                         className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500" 
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-gray-500 mb-1.5">Köhnə qiymət</label>
+                      <label className="block text-xs font-semibold text-gray-500 mb-1.5">Köhnə qiymət (endirim varsa)</label>
                       <input 
                         type="number" 
+                        min="0"
+                        step="0.01"
                         value={form.originalPrice || ''} 
-                        onChange={(e) => setForm((f) => ({ ...f, originalPrice: Number(e.target.value) || undefined }))}
+                        onChange={(e) => {
+                          setForm((f) => ({ ...f, originalPrice: Number(e.target.value) || undefined }));
+                          setHasUnsavedChanges(true);
+                        }}
                         className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500" 
                       />
                     </div>
@@ -550,7 +836,10 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                     <div className="relative">
                       <select 
                         value={form.category} 
-                        onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
+                        onChange={(e) => {
+                          setForm((f) => ({ ...f, category: e.target.value }));
+                          setHasUnsavedChanges(true);
+                        }}
                         className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500 appearance-none pr-8"
                       >
                         {allCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -564,7 +853,10 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                     <input 
                       type="text" 
                       value={form.badge || ''} 
-                      onChange={(e) => setForm((f) => ({ ...f, badge: e.target.value }))}
+                      onChange={(e) => {
+                        setForm((f) => ({ ...f, badge: e.target.value }));
+                        setHasUnsavedChanges(true);
+                      }}
                       placeholder="Yeni / Endirim / Ən çox satılan"
                       className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500" 
                     />
@@ -575,7 +867,10 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                       <input 
                         type="checkbox" 
                         checked={form.isNew}
-                        onChange={(e) => setForm((f) => ({ ...f, isNew: e.target.checked }))}
+                        onChange={(e) => {
+                          setForm((f) => ({ ...f, isNew: e.target.checked }));
+                          setHasUnsavedChanges(true);
+                        }}
                         className="w-4 h-4 accent-blue-600" 
                       />
                       <span className="text-sm text-gray-600">Yeni məhsul</span>
@@ -584,16 +879,35 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                       <input 
                         type="checkbox" 
                         checked={form.isBestseller}
-                        onChange={(e) => setForm((f) => ({ ...f, isBestseller: e.target.checked }))}
+                        onChange={(e) => {
+                          setForm((f) => ({ ...f, isBestseller: e.target.checked }));
+                          setHasUnsavedChanges(true);
+                        }}
                         className="w-4 h-4 accent-blue-600" 
                       />
                       <span className="text-sm text-gray-600">Ən çox satılan</span>
                     </label>
                   </div>
 
+                  {/* Ətraflı Təsvir */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1.5">Ətraflı Təsvir</label>
+                    <textarea
+                      value={form.description || ''}
+                      onChange={(e) => {
+                        setForm((f) => ({ ...f, description: e.target.value }));
+                        setHasUnsavedChanges(true);
+                      }}
+                      placeholder="Məhsul haqqında ətraflı məlumat..."
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500 min-h-[100px] resize-y"
+                    />
+                  </div>
+
                   {/* Şəkil Yükləmə */}
                   <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-2">Şəkil *</label>
+                    <label className="block text-xs font-semibold text-gray-500 mb-2">
+                      Şəkil * {editId && <span className="text-gray-400 font-normal">(dəyişmək üçün yeni şəkil seçin)</span>}
+                    </label>
                     
                     <div 
                       onClick={() => !isSubmitting && fileRef.current?.click()}
@@ -601,7 +915,7 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                     >
                       {isSubmitting ? <Loader2 className="w-8 h-8 text-gray-400 mx-auto mb-2 animate-spin" /> : <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />}
                       <p className="text-sm text-gray-500">Şəkil seçmək üçün klikləyin</p>
-                      <p className="text-xs text-gray-400 mt-1">PNG, JPG, WEBP dəstəklənir</p>
+                      <p className="text-xs text-gray-400 mt-1">PNG, JPG, WEBP (max 5MB)</p>
                       <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} disabled={isSubmitting} />
                     </div>
 
@@ -609,8 +923,13 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                       <div className="mt-3 relative">
                         <img src={previewUrl} alt="preview" className="w-full h-40 sm:h-48 object-cover rounded-xl border border-gray-200" />
                         <button 
-                          onClick={() => { setPreviewUrl(''); setForm((f) => ({ ...f, image: '' })); }}
+                          onClick={() => { 
+                            setPreviewUrl(''); 
+                            setForm((f) => ({ ...f, image: '' })); 
+                            setHasUnsavedChanges(true);
+                          }}
                           className="absolute top-2 right-2 p-1.5 bg-black/60 text-white rounded-full hover:bg-black/80"
+                          title="Şəkli sil"
                         >
                           <X className="w-4 h-4" />
                         </button>
@@ -634,7 +953,11 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                         placeholder="Nümunə: 16GB"
                         className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500" 
                       />
-                      <button onClick={addSpec} className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 sm:w-auto w-full flex items-center justify-center gap-1">
+                      <button 
+                        onClick={addSpec} 
+                        disabled={!specKey || !specVal}
+                        className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 sm:w-auto w-full flex items-center justify-center gap-1"
+                      >
                         <Plus className="w-4 h-4" /> <span className="sm:hidden">Əlavə et</span>
                       </button>
                     </div>
@@ -656,16 +979,24 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                   <div className="flex flex-col sm:flex-row gap-3 pt-4 sticky bottom-0 bg-white pb-2 border-t border-gray-100">
                     <button 
                       onClick={handleSubmit}
-                      disabled={isSubmitting}
+                      disabled={isSubmitting || !form.name || !form.price || !form.image}
                       className="flex-1 flex items-center justify-center gap-2 py-3 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50"
                     >
                       {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                      {editId ? 'Yenilə' : 'Əlavə Et'}
+                      {editId ? 'Yadda Saxla' : 'Əlavə Et'}
                     </button>
                     
                     {editId && (
                       <button 
-                        onClick={() => { setEditId(null); setForm(emptyProduct()); setPreviewUrl(''); }}
+                        onClick={() => {
+                          if (hasUnsavedChanges) {
+                            if (confirm('Dəyişikliklər yadda saxlanmayacaq. Ləğv etmək istədiyinizə əminsiniz?')) {
+                              clearForm();
+                            }
+                          } else {
+                            clearForm();
+                          }
+                        }}
                         className="py-3 px-4 text-sm text-gray-500 hover:text-gray-900 transition-colors border border-gray-200 rounded-xl"
                       >
                         Ləğv et
@@ -676,7 +1007,7 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
               </div>
             )}
 
-            {/* Manage Products Tab - NÜMUNƏLƏRİ YÜKLƏ MƏTNİ SİLİNDİ */}
+            {/* Manage Products Tab */}
             {tab === 'manage-products' && (
               <div className="h-full overflow-y-auto p-4 sm:p-6 bg-gray-50">
                 <div className="max-w-4xl mx-auto">
@@ -706,10 +1037,10 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                     <div className="grid grid-cols-1 gap-3 pb-10">
                       {products.map((product) => (
                         <div key={product.id} className="flex items-center gap-3 p-3 bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
-                          <img src={product.image} alt={product.name} className="w-16 h-16 sm:w-20 sm:h-20 object-cover rounded-lg flex-shrink-0 bg-gray-100" />
+                          <img src={product.image} alt={product.name} className="w-16 h-16 sm:w-20 sm:h-20 object-cover rounded-lg flex-shrink-0 bg-gray-100" onError={(e) => { (e.target as HTMLImageElement).src = 'https://via.placeholder.com/150?text=No+Image'; }} />
                           <div className="flex-1 min-w-0">
                             <p className="font-semibold text-gray-900 text-sm sm:text-base truncate">{product.name}</p>
-                            <p className="text-xs text-gray-500 mt-0.5">{product.price} AZN · {allCategories.find(c => c.id === product.category)?.name}</p>
+                            <p className="text-xs text-gray-500 mt-0.5">{product.price} AZN · {allCategories.find(c => c.id === product.category)?.name || product.category}</p>
                             {product.badge && (
                               <span className="inline-block mt-1.5 text-[10px] px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full">
                                 {product.badge}
@@ -728,6 +1059,7 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                               onClick={() => handleDelete(product.id)} 
                               className="p-2 text-red-500 hover:bg-red-50 rounded-lg"
                               title="Sil"
+                              disabled={isSubmitting}
                             >
                               <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
                             </button>
@@ -759,26 +1091,28 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-semibold text-gray-500 mb-1.5">Unikal ID *</label>
+                        <label className="block text-xs font-semibold text-gray-500 mb-1.5">Unikal ID * (boşluqsuz, kiçik hərflə)</label>
                         <input 
                           type="text" 
                           value={newCatId} 
                           onChange={(e) => setNewCatId(e.target.value.toLowerCase().replace(/\s+/g, '-'))}
-                          placeholder="masalan: yeni-kateqoriya"
+                          placeholder="masalan: oyun-noutbuklari"
                           className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500" 
                         />
                       </div>
                       <button 
                         onClick={handleAddCategory} 
-                        className="w-full flex items-center justify-center gap-2 py-3 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 text-sm"
+                        disabled={isSubmitting || !newCatName.trim() || !newCatId.trim()}
+                        className="w-full flex items-center justify-center gap-2 py-3 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 disabled:opacity-50 text-sm"
                       >
-                        <FolderPlus className="w-4 h-4" /> Əlavə Et
+                        {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FolderPlus className="w-4 h-4" />}
+                        Əlavə Et
                       </button>
                     </div>
                   </div>
 
                   <div className="flex-1">
-                    <h3 className="font-semibold text-gray-900 text-base mb-4">Kateqoriyalar</h3>
+                    <h3 className="font-semibold text-gray-900 text-base mb-4">Mövcud Kateqoriyalar</h3>
                     <div className="space-y-2 pb-10">
                       {defaultCategories.map((cat) => (
                         <div key={cat.id} className="flex items-center gap-3 px-4 py-3 bg-white rounded-xl border border-gray-200">
@@ -800,6 +1134,7 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                           <button 
                             onClick={() => handleDeleteCategory(cat.id)} 
                             className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg"
+                            disabled={isSubmitting}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -888,9 +1223,11 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
 
                       <button 
                         onClick={handleAddFilter} 
-                        className="w-full flex items-center justify-center gap-2 py-3 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 text-sm"
+                        disabled={isSubmitting || !newFilterName.trim() || !newFilterKey.trim()}
+                        className="w-full flex items-center justify-center gap-2 py-3 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 disabled:opacity-50 text-sm"
                       >
-                        <Filter className="w-4 h-4" /> Filter Əlavə Et
+                        {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Filter className="w-4 h-4" />}
+                        Filter Əlavə Et
                       </button>
                     </div>
                   </div>
@@ -929,6 +1266,7 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                             <button 
                               onClick={() => handleDeleteFilter(filter.id)} 
                               className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg flex-shrink-0"
+                              disabled={isSubmitting}
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -946,39 +1284,3 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
     </div>
   );
 }
-// emptyProduct funksiyasına əlavə et:
-const emptyProduct = (): Omit<Product, 'id'> & { description?: string } => ({
-  name: '', price: 0, originalPrice: undefined,
-  image: '', category: 'gaming', specs: {},
-  badge: '', isNew: false, isBestseller: false,
-  description: '', // ƏLAVƏ EDİLDİ
-});
-
-// State əlavə et (form state-inin yanına):
-const [description, setDescription] = useState(''); // ƏLAVƏ EDİLDİ
-
-// handleSubmit içində productData-ya əlavə et:
-const productData = {
-  id: editId || `admin-${Date.now()}`,
-  name: form.name,
-  price: form.price,
-  original_price: form.originalPrice || null,
-  image: form.image,
-  category: form.category,
-  specs: form.specs,
-  badge: form.badge || null,
-  is_new: form.isNew,
-  is_bestseller: form.isBestseller,
-  description: description || null, // ƏLAVƏ EDİLDİ
-};
-
-// Form render hissəsində (specs-in altına əlavə et):
-<div>
-  <label className="block text-xs font-semibold text-gray-500 mb-1.5">Ətraflı Təsvir</label>
-  <textarea
-    value={description}
-    onChange={(e) => setDescription(e.target.value)}
-    placeholder="Məhsul haqqında ətraflı məlumat..."
-    className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500 min-h-[100px] resize-y"
-  />
-</div>

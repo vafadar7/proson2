@@ -1,3 +1,47 @@
+import { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase'; // yolunuza görə düzəldin
+import { categories as defaultCategories } from '../data/products';
+
+function Shop() { // və ya component-inizin adı nədirsə
+  const [categories, setCategories] = useState(defaultCategories);
+  const [customCategories, setCustomCategories] = useState([]);
+
+  // Supabase-dən kateqoriyaları çək
+  useEffect(() => {
+    fetchCategories();
+    
+    // Admin paneldə yenilik olanda avtomatik yenilə
+    window.addEventListener('adminCategoriesUpdated', fetchCategories);
+    return () => window.removeEventListener('adminCategoriesUpdated', fetchCategories);
+  }, []);
+
+  const fetchCategories = async () => {
+    const { data, error } = await supabase
+      .from('categories')
+      .select('*');
+    
+    if (data && !error) {
+      const custom = data.map(c => ({
+        id: c.id,
+        name: c.name,
+        filters: c.filters || []
+      }));
+      setCustomCategories(custom);
+      
+      // Default + Custom birləşdir
+      setCategories([...defaultCategories, ...custom]);
+    }
+  };
+
+  // JSX-də categories istifadə edin...
+  return (
+    <div>
+      {categories.map(cat => (
+        <button key={cat.id}>{cat.name}</button>
+      ))}
+    </div>
+  );
+}
 import { motion } from 'framer-motion';
 import { Phone, ArrowRight, CheckCircle2 } from 'lucide-react';
 

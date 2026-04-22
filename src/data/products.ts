@@ -9,6 +9,7 @@ export interface Product {
   badge?: string;
   isNew?: boolean;
   isBestseller?: boolean;
+  description?: string;
 }
 
 export interface Filter {

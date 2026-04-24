@@ -14,6 +14,21 @@ interface ProductsSectionProps {
   onExternalCategoryConsumed?: () => void;
 }
 
+// FIX: Qiymət filterini ayrıca funksiyaya çıxardıq — oxunaqlılıq üçün
+function matchesPriceFilter(price: number, filterValue: string): boolean {
+  if (filterValue === '< 100 AZN') return price < 100;
+  if (filterValue === '< 1000 AZN') return price < 1000;
+  if (filterValue === '100-300 AZN') return price >= 100 && price <= 300;
+  if (filterValue === '300-500 AZN') return price >= 300 && price <= 500;
+  if (filterValue === '500-1000 AZN') return price >= 500 && price <= 1000;
+  if (filterValue === '1000-1500 AZN') return price >= 1000 && price <= 1500;
+  if (filterValue === '1500-2000 AZN') return price >= 1500 && price <= 2000;
+  if (filterValue === '2000-2500 AZN') return price >= 2000 && price <= 2500;
+  if (filterValue === '> 2000 AZN') return price > 2000;
+  if (filterValue === '> 500 AZN') return price > 500;
+  return false;
+}
+
 export default function ProductsSection({
   onAddToCart,
   externalCategory,
@@ -55,41 +70,34 @@ export default function ProductsSection({
   const filteredProducts = useMemo(() => {
     let result = [...categoryProducts];
 
-    // Apply static filters (from specs)
+    // FIX: Əvvəlki kodda filterlər İKİ DƏFƏ tətbiq olunurdu:
+    // 1) specs-ə baxan blok bütün filterKey-ləri emal edirdi,
+    // 2) sonra filterValues-ə baxan blok eyni filterKey-ləri yenidən emal edirdi
+    //    və filterValues boş olan məhsulları silirdi — bu specs filterini sındırırdı.
+    //
+    // Düzgün yanaşma: hər filterKey üçün specs VƏ filterValues-ə BİRLİKDƏ bax,
+    // məhsul hər hansı birindən uyğun gəlirsə keçsin.
     Object.entries(activeFilters).forEach(([filterKey, values]) => {
-      if (values.length > 0) {
-        result = result.filter((product) => {
-          const productValue = product.specs[filterKey];
-          return values.some((filterValue) => {
-            if (filterKey === 'price') {
-              const price = product.price;
-              if (filterValue === '< 100 AZN') return price < 100;
-              if (filterValue === '< 1000 AZN') return price < 1000;
-              if (filterValue === '100-300 AZN') return price >= 100 && price <= 300;
-              if (filterValue === '300-500 AZN') return price >= 300 && price <= 500;
-              if (filterValue === '500-1000 AZN') return price >= 500 && price <= 1000;
-              if (filterValue === '1000-1500 AZN') return price >= 1000 && price <= 1500;
-              if (filterValue === '1500-2000 AZN') return price >= 1500 && price <= 2000;
-              if (filterValue === '2000-2500 AZN') return price >= 2000 && price <= 2500;
-              if (filterValue === '> 2000 AZN') return price > 2000;
-              if (filterValue === '> 500 AZN') return price > 500;
-              return false;
-            }
-            return productValue === filterValue;
-          });
-        });
-      }
-    });
+      if (values.length === 0) return;
 
-    // Apply dynamic filters (from filterValues)
-    Object.entries(activeFilters).forEach(([filterKey, values]) => {
-      if (values.length > 0) {
-        result = result.filter((product) => {
-          const productValue = product.filterValues?.[filterKey];
-          if (!productValue) return false;
-          return values.includes(productValue);
+      result = result.filter((product) => {
+        return values.some((filterValue) => {
+          // Qiymət filteri — specs-dən deyil, birbaşa product.price-dan yoxlanılır
+          if (filterKey === 'price') {
+            return matchesPriceFilter(product.price, filterValue);
+          }
+
+          // Statik specs yoxlaması
+          const specValue = product.specs[filterKey];
+          if (specValue !== undefined && specValue === filterValue) return true;
+
+          // Dinamik filterValues yoxlaması
+          const dynValue = product.filterValues?.[filterKey];
+          if (dynValue !== undefined && dynValue === filterValue) return true;
+
+          return false;
         });
-      }
+      });
     });
 
     switch (sortBy) {

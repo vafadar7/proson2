@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { ShoppingCart, CheckCircle2, Sparkles, TrendingUp, Eye } from 'lucide-react';
-import { useNavigate } from 'react-router-dom'; // ƏLAVƏ EDİLDİ
+import { useNavigate } from 'react-router-dom';
 import type { Product } from '../../data/products';
 
 interface ProductCardProps {
@@ -10,8 +10,8 @@ interface ProductCardProps {
 }
 
 export default function ProductCard({ product, index, onAddToCart }: ProductCardProps) {
-  const navigate = useNavigate(); // ƏLAVƏ EDİLDİ
-  
+  const navigate = useNavigate();
+
   const getBadgeColor = () => {
     if (product.isNew) return 'bg-secondary text-white';
     if (product.isBestseller) return 'bg-accent text-white';
@@ -32,13 +32,9 @@ export default function ProductCard({ product, index, onAddToCart }: ProductCard
       transition={{ duration: 0.4, delay: index * 0.04 }}
       className="group bg-card rounded-xl border border-border overflow-hidden hover:border-secondary/50 hover:shadow-card transition-all duration-300"
     >
-      {/* Image — compact aspect ratio */}
+      {/* Image */}
       <div className="relative aspect-[4/3] overflow-hidden bg-background">
-        <img
-          src={product.image}
-          alt={product.name}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-        />
+        <img src={product.image} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
         {product.badge && (
           <div className={`absolute top-2 left-2 flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-semibold ${getBadgeColor()}`}>
             {getBadgeIcon()}
@@ -51,13 +47,13 @@ export default function ProductCard({ product, index, onAddToCart }: ProductCard
         </div>
       </div>
 
-      {/* Content — tighter padding */}
+      {/* Content */}
       <div className="p-3">
         <h3 className="font-heading font-semibold text-sm text-primary mb-1.5 line-clamp-1 group-hover:text-secondary transition-colors">
           {product.name}
         </h3>
 
-        {/* Specs — max 2 to save space */}
+        {/* Specs */}
         <div className="flex flex-wrap gap-1 mb-2">
           {Object.entries(product.specs).slice(0, 2).map(([key, value]) => (
             <span key={key} className="px-1.5 py-0.5 bg-background rounded text-[10px] text-muted border border-border">
@@ -74,7 +70,7 @@ export default function ProductCard({ product, index, onAddToCart }: ProductCard
           )}
         </div>
 
-        {/* DÜYMƏLƏR — DƏYİŞDİRİLDİ (İki düymə yan-yana) */}
+        {/* Buttons */}
         <div className="flex gap-2">
           <button
             onClick={() => onAddToCart?.(product)}
@@ -83,8 +79,6 @@ export default function ProductCard({ product, index, onAddToCart }: ProductCard
             <ShoppingCart className="w-3.5 h-3.5" />
             Səbətə At
           </button>
-          
-          {/* ƏTRAFLI BAX DÜYMƏSİ */}
           <button
             onClick={() => navigate(`/product/${product.id}`)}
             className="flex items-center justify-center gap-1.5 px-3 py-2 border border-border bg-card text-primary font-semibold text-xs rounded-lg hover:bg-secondary/10 hover:border-secondary/50 transition-all"

@@ -1,14 +1,12 @@
 import { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { SlidersHorizontal } from 'lucide-react';
-import { categories, products as staticProducts } from '../../data/products';
+import { products as staticProducts } from '../../data/products';
 import type { Product } from '../../data/products';
-import { loadAdminProducts } from '../../lib/supabase'; // ← BURANI DƏYİŞ
+import { useStore } from '../../store/useStore';
 import CategoryTabs from './CategoryTabs';
 import FilterSidebar from './FilterSidebar';
 import ProductCard from './ProductCard';
-
-// ... qalan hissə tamamilə eyni qalır (dəyişmə)
 
 interface ProductsSectionProps {
   onAddToCart?: (product: Product) => void;
@@ -25,37 +23,9 @@ export default function ProductsSection({
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [activeFilters, setActiveFilters] = useState<Record<string, string[]>>({});
   const [sortBy, setSortBy] = useState('bestseller');
-  
-  // DÜZƏLİŞ 1: Boş array ilə başlat, useEffect-də çək
-  const [adminProducts, setAdminProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
 
-  // DÜZƏLİŞ 2: useEffect-də async data çək
-  useEffect(() => {
-    const fetchProducts = async () => {
-      try {
-        const products = await loadAdminProducts();
-        setAdminProducts(products || []);
-      } catch (error) {
-        console.error('Məhsulları yükləmə xətası:', error);
-        setAdminProducts([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchProducts();
-  }, []);
-
-  // DÜZƏLİŞ 3: Event listener də async olmalıdır
-  useEffect(() => {
-    const handler = async () => {
-      const products = await loadAdminProducts();
-      setAdminProducts(products || []);
-    };
-    window.addEventListener('adminProductsUpdated', handler);
-    return () => window.removeEventListener('adminProductsUpdated', handler);
-  }, []);
+  const adminProducts = useStore((s) => s.adminProducts);
+  const isLoading = useStore((s) => s.isLoading);
 
   // Handle external category selection from hamburger menu
   useEffect(() => {
@@ -70,10 +40,12 @@ export default function ProductsSection({
   // Merge static + admin products
   const allProducts = useMemo(() => [...staticProducts, ...adminProducts], [adminProducts]);
 
-  const currentCategory = useMemo(
-    () => categories.find((c) => c.id === activeCategory) || categories[0],
-    [activeCategory]
+  const currentCategory = useStore((s) =>
+    s.allCategories.find((c) => c.id === activeCategory) || s.allCategories[0]
   );
+
+  // Get dynamic filters for this category from store
+  const dynamicFilters = useStore((s) => s.getFiltersByCategory(activeCategory));
 
   const categoryProducts = useMemo(
     () => allProducts.filter((p) => p.category === activeCategory),
@@ -82,6 +54,8 @@ export default function ProductsSection({
 
   const filteredProducts = useMemo(() => {
     let result = [...categoryProducts];
+
+    // Apply static filters (from specs)
     Object.entries(activeFilters).forEach(([filterKey, values]) => {
       if (values.length > 0) {
         result = result.filter((product) => {
@@ -103,6 +77,17 @@ export default function ProductsSection({
             }
             return productValue === filterValue;
           });
+        });
+      }
+    });
+
+    // Apply dynamic filters (from filterValues)
+    Object.entries(activeFilters).forEach(([filterKey, values]) => {
+      if (values.length > 0) {
+        result = result.filter((product) => {
+          const productValue = product.filterValues?.[filterKey];
+          if (!productValue) return false;
+          return values.includes(productValue);
         });
       }
     });
@@ -134,8 +119,7 @@ export default function ProductsSection({
 
   const activeFiltersCount = Object.values(activeFilters).flat().length;
 
-  // Əgər yüklənmə gedirsə, gözləmə göstəricisi göstər (istəyə bağlı)
-  if (loading) {
+  if (isLoading) {
     return (
       <section id="products" className="py-16 bg-background">
         <div className="max-w-7xl mx-auto px-4 text-center">
@@ -191,6 +175,7 @@ export default function ProductsSection({
         <div className="flex gap-5 xl:gap-6 items-start">
           <FilterSidebar
             category={currentCategory}
+            dynamicFilters={dynamicFilters}
             isOpen={isFilterOpen}
             onClose={() => setIsFilterOpen(false)}
             activeFilters={activeFilters}

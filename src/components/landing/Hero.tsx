@@ -1,47 +1,3 @@
-import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase'; // yolunuza görə düzəldin
-import { categories as defaultCategories } from '../data/products';
-
-function Shop() { // və ya component-inizin adı nədirsə
-  const [categories, setCategories] = useState(defaultCategories);
-  const [customCategories, setCustomCategories] = useState([]);
-
-  // Supabase-dən kateqoriyaları çək
-  useEffect(() => {
-    fetchCategories();
-    
-    // Admin paneldə yenilik olanda avtomatik yenilə
-    window.addEventListener('adminCategoriesUpdated', fetchCategories);
-    return () => window.removeEventListener('adminCategoriesUpdated', fetchCategories);
-  }, []);
-
-  const fetchCategories = async () => {
-    const { data, error } = await supabase
-      .from('categories')
-      .select('*');
-    
-    if (data && !error) {
-      const custom = data.map(c => ({
-        id: c.id,
-        name: c.name,
-        filters: c.filters || []
-      }));
-      setCustomCategories(custom);
-      
-      // Default + Custom birləşdir
-      setCategories([...defaultCategories, ...custom]);
-    }
-  };
-
-  // JSX-də categories istifadə edin...
-  return (
-    <div>
-      {categories.map(cat => (
-        <button key={cat.id}>{cat.name}</button>
-      ))}
-    </div>
-  );
-}
 import { motion } from 'framer-motion';
 import { Phone, ArrowRight, CheckCircle2 } from 'lucide-react';
 
@@ -52,14 +8,11 @@ export default function Hero() {
     <section id="hero" className="relative min-h-screen flex items-center overflow-hidden">
       {/* Background */}
       <div className="absolute inset-0 hero-gradient">
-        {/* Circuit Lines */}
         <div className="absolute top-20 left-10 w-40 h-px bg-gradient-to-r from-transparent via-secondary/30 to-transparent" />
         <div className="absolute top-40 right-20 w-60 h-px bg-gradient-to-r from-transparent via-accent/20 to-transparent" />
         <div className="absolute bottom-32 left-1/4 w-80 h-px bg-gradient-to-r from-transparent via-secondary/20 to-transparent" />
         <div className="absolute top-1/3 left-1/3 w-px h-40 bg-gradient-to-b from-transparent via-secondary/20 to-transparent" />
         <div className="absolute bottom-1/4 right-1/3 w-px h-60 bg-gradient-to-b from-transparent via-accent/20 to-transparent" />
-        
-        {/* Gradient Orbs */}
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-secondary/10 rounded-full blur-3xl" />
         <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-accent/10 rounded-full blur-3xl" />
         <div className="absolute top-1/2 right-1/2 w-64 h-64 bg-cyan-500/5 rounded-full blur-3xl" />
@@ -151,8 +104,8 @@ export default function Hero() {
             transition={{ delay: 0.4, duration: 0.6 }}
             className="text-lg sm:text-xl text-white/80 leading-relaxed mb-10 max-w-2xl"
           >
-            Oyun, iş və ev istifadəsi üçün ən sərfəli modelləri ProfiTech-də tapın. 
-            Bütün məhsullar 100% qarantiya ilə təqdim olunur və sifariş WhatsApp üzərindən 
+            Oyun, iş və ev istifadəsi üçün ən sərfəli modelləri ProfiTech-də tapın.
+            Bütün məhsullar 100% qarantiya ilə təqdim olunur və sifariş WhatsApp üzərindən
             sürətli şəkildə həyata keçirilir.
           </motion.p>
 

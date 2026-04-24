@@ -10,6 +10,8 @@ export interface Product {
   isNew?: boolean;
   isBestseller?: boolean;
   description?: string;
+  // Dynamic filters - admin tərəfindən əlavə edilən filter dəyərləri
+  filterValues?: Record<string, string>;
 }
 
 export interface Filter {
@@ -80,7 +82,6 @@ export const categories: Category[] = [
 ];
 
 export const products: Product[] = [
-  // Oyun Noutbukları
   {
     id: "gaming-1",
     name: "ASUS ROG Strix G16 (2024)",
@@ -130,8 +131,6 @@ export const products: Product[] = [
     specs: { gpu: "RTX 4060", cpu: "Ryzen 9 7945HX", ram: "16GB", ssd: "1TB", refresh: "165Hz" },
     isNew: true,
   },
-
-  // İş Noutbukları
   {
     id: "business-1",
     name: "Dell XPS 15 (9530)",
@@ -169,8 +168,6 @@ export const products: Product[] = [
     category: "business",
     specs: { battery: "12+ saat", weight: "1-1.5kg", cpu: "i5", ram: "16GB", ssd: "256GB" },
   },
-
-  // Ev Noutbukları
   {
     id: "home-1",
     name: "ASUS VivoBook 15 (X1504)",
@@ -207,8 +204,6 @@ export const products: Product[] = [
     specs: { price: "1500-2000 AZN", ram: "16GB", ssd: "512GB", screen: '17.3"' },
     badge: "Böyük ekran",
   },
-
-  // Printerlər
   {
     id: "printer-1",
     name: "HP LaserJet Pro M404dn",
@@ -238,8 +233,6 @@ export const products: Product[] = [
     specs: { type: "Inkjet", color: "Rəngli", wifi: "Var", speed: "20-30 səh/san" },
     isNew: true,
   },
-
-  // Digər İT Avadanlıqları
   {
     id: "other-1",
     name: "Logitech MX Master 3S",
@@ -279,6 +272,7 @@ export const products: Product[] = [
     badge: "Ən yaxşı seçim",
   },
 ];
+
 export const features = [
   { id: "f1", title: "100% Qarantiya", description: "Bütün məhsullar rəsmi distribyutor zəmanəti ilə təqdim olunur", icon: "Shield" },
   { id: "f2", title: "Sürətli Çatdırılma", description: "Sifarişləriniz 24 saat ərzində Bakı daxilində çatdırılır", icon: "Truck" },

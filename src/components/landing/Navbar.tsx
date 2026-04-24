@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X, Search, ShoppingCart, Phone, ChevronRight } from 'lucide-react';
-import { categories } from '../../data/products';
+import { Menu, X, Search, ShoppingCart, Phone, ChevronRight, Settings } from 'lucide-react';
+import { useStore } from '../../store/useStore';
 
 interface NavbarProps {
   cartCount?: number;
@@ -15,12 +15,13 @@ export default function Navbar({ cartCount = 0, onCartClick, onCategorySelect }:
   const searchRef = useRef<HTMLInputElement>(null);
   const whatsappLink = `https://wa.me/994504926834?text=Salam,%20ProfiTech%20saytından%20yazıram.%20Məhsul%20barədə%20məlumat%20istəyirəm.`;
 
+  const allCategories = useStore((s) => s.allCategories);
+
   const handleCategoryClick = (categoryId: string) => {
     setIsMobileMenuOpen(false);
     onCategorySelect?.(categoryId);
   };
 
-  // Logo linki
   const logoUrl = "https://profitech.az/frontendCssJs/img/logo/logo_light.png";
 
   return (
@@ -29,7 +30,6 @@ export default function Navbar({ cartCount = 0, onCartClick, onCategorySelect }:
       <header className="fixed top-0 left-0 right-0 z-50 bg-[#000000] border-b border-white/10 shadow-lg">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
           <div className="flex items-center h-14 sm:h-16 gap-2 sm:gap-3">
-
             {/* LEFT — Hamburger */}
             <button
               onClick={() => setIsMobileMenuOpen(true)}
@@ -39,13 +39,9 @@ export default function Navbar({ cartCount = 0, onCartClick, onCategorySelect }:
               <Menu className="w-5 h-5" />
             </button>
 
-            {/* Logo — Link ilə */}
-            <a href="#hero" className="hidden sm:flex items-center gap-2 flex-shrink-0 mr-1">
-              <img 
-                src={logoUrl} 
-                alt="ProfiTech" 
-                className="h-8 w-auto object-contain"
-              />
+            {/* Logo */}
+            <a href="/" className="hidden sm:flex items-center gap-2 flex-shrink-0 mr-1">
+              <img src={logoUrl} alt="ProfiTech" className="h-8 w-auto object-contain" />
             </a>
 
             {/* CENTER — Search */}
@@ -61,19 +57,28 @@ export default function Navbar({ cartCount = 0, onCartClick, onCategorySelect }:
               />
             </div>
 
-            {/* RIGHT — Cart Icon */}
-            <button
-              onClick={onCartClick}
-              className="relative flex-shrink-0 p-2 text-white/80 hover:text-white transition-colors rounded-lg hover:bg-white/10"
-              aria-label="Səbət"
-            >
-              <ShoppingCart className="w-5 h-5" />
-              {cartCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-secondary text-white text-[10px] font-bold rounded-full flex items-center justify-center">
-                  {cartCount > 9 ? '9+' : cartCount}
-                </span>
-              )}
-            </button>
+            {/* RIGHT — Cart + Admin */}
+            <div className="flex items-center gap-1">
+              <a
+                href="/admin"
+                className="hidden sm:flex p-2 text-white/50 hover:text-white transition-colors rounded-lg hover:bg-white/10"
+                title="Admin Panel"
+              >
+                <Settings className="w-4 h-4" />
+              </a>
+              <button
+                onClick={onCartClick}
+                className="relative flex-shrink-0 p-2 text-white/80 hover:text-white transition-colors rounded-lg hover:bg-white/10"
+                aria-label="Səbət"
+              >
+                <ShoppingCart className="w-5 h-5" />
+                {cartCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-secondary text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                    {cartCount > 9 ? '9+' : cartCount}
+                  </span>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </header>
@@ -95,11 +100,7 @@ export default function Navbar({ cartCount = 0, onCartClick, onCategorySelect }:
             >
               <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
                 <div className="flex items-center gap-2">
-                  <img 
-                    src={logoUrl} 
-                    alt="ProfiTech" 
-                    className="h-8 w-auto object-contain"
-                  />
+                  <img src={logoUrl} alt="ProfiTech" className="h-8 w-auto object-contain" />
                 </div>
                 <button onClick={() => setIsMobileMenuOpen(false)} className="p-1.5 text-white/50 hover:text-white transition-colors rounded-lg hover:bg-white/10">
                   <X className="w-5 h-5" />
@@ -108,10 +109,8 @@ export default function Navbar({ cartCount = 0, onCartClick, onCategorySelect }:
 
               <div className="flex-1 overflow-y-auto py-3">
                 {[
-                  { name: 'Ana Səhifə', href: '#hero' },
-                  { name: 'Məhsullar', href: '#products' },
-                  { name: 'Xüsusiyyətlər', href: '#features' },
-                  { name: 'Necə İşləyir', href: '#how-it-works' },
+                  { name: 'Ana Səhifə', href: '/' },
+                  { name: 'Məhsullar', href: '/#products' },
                 ].map((link) => (
                   <a key={link.name} href={link.href} onClick={() => setIsMobileMenuOpen(false)}
                     className="flex items-center justify-between px-5 py-3 text-white/80 hover:text-white hover:bg-white/5 transition-colors text-sm font-medium">
@@ -121,7 +120,7 @@ export default function Navbar({ cartCount = 0, onCartClick, onCategorySelect }:
                 ))}
                 <div className="mt-3 pt-3 border-t border-white/10">
                   <p className="px-5 pb-2 text-xs font-semibold text-white/30 uppercase tracking-wider">Kateqoriyalar</p>
-                  {categories.map((cat) => (
+                  {allCategories.map((cat) => (
                     <button
                       key={cat.id}
                       onClick={() => handleCategoryClick(cat.id)}
@@ -131,6 +130,15 @@ export default function Navbar({ cartCount = 0, onCartClick, onCategorySelect }:
                       <ChevronRight className="w-3.5 h-3.5 text-white/20" />
                     </button>
                   ))}
+                </div>
+                <div className="mt-3 pt-3 border-t border-white/10">
+                  <a href="/admin" onClick={() => setIsMobileMenuOpen(false)}
+                    className="flex items-center justify-between px-5 py-3 text-white/60 hover:text-white hover:bg-white/5 transition-colors text-sm font-medium">
+                    <span className="flex items-center gap-2">
+                      <Settings className="w-4 h-4" /> Admin Panel
+                    </span>
+                    <ChevronRight className="w-4 h-4 text-white/30" />
+                  </a>
                 </div>
               </div>
 

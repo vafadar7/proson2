@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { categories } from '../../data/products';
+import { useStore } from '../../store/useStore';
 
 interface CategoryTabsProps {
   activeCategory: string;
@@ -7,9 +7,11 @@ interface CategoryTabsProps {
 }
 
 export default function CategoryTabs({ activeCategory, onCategoryChange }: CategoryTabsProps) {
+  const allCategories = useStore((s) => s.allCategories);
+
   return (
     <div className="flex flex-wrap justify-center gap-2 sm:gap-4">
-      {categories.map((category) => (
+      {allCategories.map((category) => (
         <motion.button
           key={category.id}
           onClick={() => onCategoryChange(category.id)}

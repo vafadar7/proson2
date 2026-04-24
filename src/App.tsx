@@ -1,6 +1,6 @@
-
-import { useState, useCallback } from 'react';
-import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
+import { useState, useCallback, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import ScrollToTop from './components/ScrollToTop';
 import Navbar from './components/landing/Navbar';
 import Hero from './components/landing/Hero';
 import LogoCloud from './components/landing/LogoCloud';
@@ -13,13 +13,15 @@ import AdminPanel from './components/landing/AdminPanel';
 import CartModal, { type CartItem } from './components/landing/CartModal';
 import ProductDetail from './components/landing/ProductDetail';
 import type { Product } from './data/products';
+import { useStore } from './store/useStore';
+import { syncAllData } from './lib/supabase';
 
 // Ana səhifə komponenti
-function HomePage({ 
-  onAddToCart, 
-  externalCategory, 
-  onExternalCategoryConsumed 
-}: { 
+function HomePage({
+  onAddToCart,
+  externalCategory,
+  onExternalCategoryConsumed,
+}: {
   onAddToCart: (product: Product) => void;
   externalCategory: string | null;
   onExternalCategoryConsumed: () => void;
@@ -43,8 +45,30 @@ function HomePage({
 function App() {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [showCart, setShowCart] = useState(false);
-  const [showAdmin, setShowAdmin] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
+
+  const setAdminProducts = useStore((s) => s.setAdminProducts);
+  const setCustomCategories = useStore((s) => s.setCustomCategories);
+  const setFilters = useStore((s) => s.setFilters);
+  const setIsLoading = useStore((s) => s.setIsLoading);
+
+  // Initial data sync from Supabase
+  useEffect(() => {
+    const loadData = async () => {
+      setIsLoading(true);
+      try {
+        const { products, categories, filters } = await syncAllData();
+        setAdminProducts(products);
+        setCustomCategories(categories);
+        setFilters(filters);
+      } catch (err) {
+        console.error('Initial sync error:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadData();
+  }, [setAdminProducts, setCustomCategories, setFilters, setIsLoading]);
 
   const cartCount = cartItems.reduce((s, i) => s + i.quantity, 0);
 
@@ -67,7 +91,7 @@ function App() {
         },
       ];
     });
-    setShowCart(true); // Avtomatik səbəti aç
+    setShowCart(true);
   }, []);
 
   const handleRemoveFromCart = useCallback((id: string) => {
@@ -77,52 +101,67 @@ function App() {
   const handleCategorySelect = useCallback((categoryId: string) => {
     setActiveCategory(categoryId);
     setTimeout(() => {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }, 50);
+      const el = document.getElementById('products');
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth' });
+      }
+    }, 100);
   }, []);
 
   return (
     <BrowserRouter>
+      <ScrollToTop />
       <div className="min-h-screen bg-background">
-        <Navbar
-          cartCount={cartCount}
-          onCartClick={() => setShowCart(true)}
-          onCategorySelect={handleCategorySelect}
-        />
-        
         <Routes>
-          <Route 
-            path="/" 
+          {/* Admin Route */}
+          <Route path="/admin/*" element={<AdminPanel />} />
+
+          {/* Main Layout Routes */}
+          <Route
+            path="/*"
             element={
-              <HomePage 
-                onAddToCart={handleAddToCart}
-                externalCategory={activeCategory}
-                onExternalCategoryConsumed={() => setActiveCategory(null)}
-              />
-            } 
-          />
-          <Route 
-            path="/product/:id" 
-            element={
-              <ProductDetail 
-                onAddToCart={handleAddToCart}
-                cartCount={cartCount}
-                onCartClick={() => setShowCart(true)}
-              />
-            } 
+              <>
+                <Navbar
+                  cartCount={cartCount}
+                  onCartClick={() => setShowCart(true)}
+                  onCategorySelect={handleCategorySelect}
+                />
+                <Routes>
+                  <Route
+                    path="/"
+                    element={
+                      <HomePage
+                        onAddToCart={handleAddToCart}
+                        externalCategory={activeCategory}
+                        onExternalCategoryConsumed={() =>
+                          setActiveCategory(null)
+                        }
+                      />
+                    }
+                  />
+                  <Route
+                    path="/product/:id"
+                    element={
+                      <ProductDetail
+                        onAddToCart={handleAddToCart}
+                        cartCount={cartCount}
+                        onCartClick={() => setShowCart(true)}
+                      />
+                    }
+                  />
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+                <Footer />
+                <CartModal
+                  isOpen={showCart}
+                  onClose={() => setShowCart(false)}
+                  items={cartItems}
+                  onRemove={handleRemoveFromCart}
+                />
+              </>
+            }
           />
         </Routes>
-
-        <Footer onAdminClick={() => setShowAdmin(true)} />
-        
-        {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
-        
-        <CartModal
-          isOpen={showCart}
-          onClose={() => setShowCart(false)}
-          items={cartItems}
-          onRemove={handleRemoveFromCart}
-        />
       </div>
     </BrowserRouter>
   );

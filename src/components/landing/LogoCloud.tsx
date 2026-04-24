@@ -1,44 +1,24 @@
 import { motion } from 'framer-motion';
 
-const partners = [
-  { name: 'ASUS', id: 'asus' },
-  { name: 'Lenovo', id: 'lenovo' },
-  { name: 'HP', id: 'hp' },
-  { name: 'Dell', id: 'dell' },
-  { name: 'Acer', id: 'acer' },
-  { name: 'MSI', id: 'msi' },
-  { name: 'Logitech', id: 'logitech' },
-  { name: 'Samsung', id: 'samsung' },
-];
+const brands = ['ASUS', 'Dell', 'HP', 'Lenovo', 'Apple', 'MSI', 'Acer', 'Logitech'];
 
 export default function LogoCloud() {
   return (
-    <section className="py-16 bg-background border-y border-border">
+    <section className="py-12 bg-background border-y border-border">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <motion.p
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.5 }}
-          className="text-center text-muted text-sm font-medium mb-10 uppercase tracking-wider"
-        >
-          Ən Yaxşı Brendlərin Rəsmi Distribyutoru
-        </motion.p>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-8 items-center">
-          {partners.map((partner, index) => (
-            <motion.div
-              key={partner.id}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
+        <p className="text-center text-muted text-sm mb-8">Rəsmi partnyorlarımız</p>
+        <div className="flex flex-wrap justify-center items-center gap-8 sm:gap-12">
+          {brands.map((brand, i) => (
+            <motion.span
+              key={brand}
+              initial={{ opacity: 0 }}
+              whileInView={{ opacity: 0.4 }}
               viewport={{ once: true }}
-              transition={{ duration: 0.5, delay: index * 0.05 }}
-              className="flex items-center justify-center"
+              transition={{ delay: i * 0.1 }}
+              className="text-lg sm:text-xl font-bold text-primary/40 hover:text-primary/70 transition-colors"
             >
-              <div className="text-2xl font-bold text-muted/40 hover:text-muted/60 transition-colors cursor-default">
-                {partner.name}
-              </div>
-            </motion.div>
+              {brand}
+            </motion.span>
           ))}
         </div>
       </div>

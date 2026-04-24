@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ShoppingCart, ArrowLeft, Truck, Shield, RotateCcw, CheckCircle2 } from 'lucide-react';
 import { products as staticProducts } from '../../data/products';
-import { loadAdminProducts } from '../../lib/supabase';
+import { useStore } from '../../store/useStore';
 import type { Product } from '../../data/products';
 
 interface ProductDetailProps {
@@ -15,25 +15,17 @@ interface ProductDetailProps {
 export default function ProductDetail({ onAddToCart, cartCount, onCartClick }: ProductDetailProps) {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [product, setProduct] = useState<Product & { description?: string } | null>(null);
+  const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const adminProducts = useStore((s) => s.adminProducts);
+
   useEffect(() => {
-    const fetchProducts = async () => {
-      try {
-        const adminProducts = await loadAdminProducts();
-        const combined = [...staticProducts, ...(adminProducts || [])];
-        const found = combined.find(p => p.id === id);
-        setProduct(found || null);
-      } catch (error) {
-        console.error('Məhsul yükləmə xətası:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    fetchProducts();
-  }, [id]);
+    const combined = [...staticProducts, ...adminProducts];
+    const found = combined.find((p) => p.id === id);
+    setProduct(found || null);
+    setLoading(false);
+  }, [id, adminProducts]);
 
   if (loading) {
     return (
@@ -47,10 +39,7 @@ export default function ProductDetail({ onAddToCart, cartCount, onCartClick }: P
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4 pt-20">
         <h1 className="text-2xl font-bold text-primary mb-4">Məhsul tapılmadı</h1>
-        <button 
-          onClick={() => navigate('/')}
-          className="px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary/90"
-        >
+        <button onClick={() => navigate('/')} className="px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary/90">
           Ana səhifəyə qayıt
         </button>
       </div>
@@ -61,7 +50,7 @@ export default function ProductDetail({ onAddToCart, cartCount, onCartClick }: P
     <div className="min-h-screen bg-background pb-20 pt-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Geri düyməsi */}
-        <button 
+        <button
           onClick={() => navigate(-1)}
           className="flex items-center gap-2 text-muted hover:text-primary mb-6 transition-colors"
         >
@@ -70,17 +59,19 @@ export default function ProductDetail({ onAddToCart, cartCount, onCartClick }: P
         </button>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
-          {/* Sol - Şəkil */}
-          <motion.div 
+          {/* Sol - Şəkil: MOBILDE sticky deyil, sadəcə scroll */}
+          <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-card rounded-2xl border border-border overflow-hidden aspect-square lg:aspect-auto lg:h-[500px] sticky top-24"
+            className="bg-card rounded-2xl border border-border overflow-hidden lg:sticky lg:top-24 lg:self-start"
           >
-            <img 
-              src={product.image} 
-              alt={product.name}
-              className="w-full h-full object-cover"
-            />
+            <div className="aspect-square lg:aspect-auto lg:h-[500px]">
+              <img
+                src={product.image}
+                alt={product.name}
+                className="w-full h-full object-cover"
+              />
+            </div>
             {product.badge && (
               <span className="absolute top-4 left-4 px-4 py-1.5 bg-secondary text-white text-sm font-bold rounded-full">
                 {product.badge}
@@ -89,7 +80,7 @@ export default function ProductDetail({ onAddToCart, cartCount, onCartClick }: P
           </motion.div>
 
           {/* Sağ - Məlumat */}
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
@@ -99,8 +90,8 @@ export default function ProductDetail({ onAddToCart, cartCount, onCartClick }: P
               <h1 className="font-heading text-2xl sm:text-3xl lg:text-4xl font-bold text-primary mb-4">
                 {product.name}
               </h1>
-              
-              <div className="flex items-baseline gap-3 mb-6">
+
+              <div className="flex items-baseline gap-3 mb-6 flex-wrap">
                 <span className="text-3xl font-bold text-secondary">
                   {product.price} AZN
                 </span>
@@ -148,6 +139,21 @@ export default function ProductDetail({ onAddToCart, cartCount, onCartClick }: P
               </div>
             )}
 
+            {/* Dynamic Filter Values */}
+            {product.filterValues && Object.keys(product.filterValues).length > 0 && (
+              <div>
+                <h3 className="font-heading font-bold text-lg text-primary mb-4">Əlavə xüsusiyyətlər</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {Object.entries(product.filterValues).map(([key, value]) => (
+                    <div key={key} className="flex justify-between px-4 py-3 bg-secondary/5 rounded-lg border border-secondary/10">
+                      <span className="text-muted text-sm capitalize">{key}</span>
+                      <span className="font-medium text-primary text-sm">{value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Ətraflı Təsvir */}
             {product.description && (
               <div className="bg-secondary/5 rounded-xl p-5 border border-secondary/10">
@@ -159,8 +165,8 @@ export default function ProductDetail({ onAddToCart, cartCount, onCartClick }: P
             )}
 
             {/* Səbətə əlavə */}
-            <div className="pt-4 sticky bottom-0 bg-background pb-4 lg:static lg:pb-0">
-              <button 
+            <div className="pt-4 lg:sticky lg:bottom-0 bg-background pb-4">
+              <button
                 onClick={() => onAddToCart(product)}
                 className="w-full py-4 bg-primary text-white font-bold text-lg rounded-xl hover:bg-primary/90 transition-all flex items-center justify-center gap-3 shadow-lg hover:shadow-xl active:scale-[0.98]"
               >

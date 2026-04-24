@@ -1,9 +1,11 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import type { Category } from '../../data/products';
+import type { FilterDef } from '../../store/useStore';
 
 interface FilterSidebarProps {
   category: Category;
+  dynamicFilters: FilterDef[];
   isOpen: boolean;
   onClose: () => void;
   activeFilters: Record<string, string[]>;
@@ -20,7 +22,7 @@ const sortOptions = [
 ];
 
 export default function FilterSidebar({
-  category, isOpen, onClose, activeFilters, onFilterChange, sortBy, onSortChange,
+  category, dynamicFilters, isOpen, onClose, activeFilters, onFilterChange, sortBy, onSortChange,
 }: FilterSidebarProps) {
   const isFilterActive = (filterKey: string, value: string) =>
     activeFilters[filterKey]?.includes(value) || false;
@@ -43,9 +45,9 @@ export default function FilterSidebar({
         )}
       </div>
 
-      {/* Scrollable Content - Bütün filterlər birlikdə scroll olsun */}
+      {/* Scrollable Content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
-        {/* Sort - Artıq sabit qalmır, scroll ilə gedir */}
+        {/* Sort */}
         <div>
           <h4 className="font-semibold text-primary mb-3 text-sm">Sırala</h4>
           <div className="space-y-2">
@@ -57,9 +59,7 @@ export default function FilterSidebar({
                   onChange={() => onSortChange(option.value)}
                   className="w-4 h-4 accent-secondary"
                 />
-                <span className={`text-sm group-hover:text-secondary transition-colors ${
-                  sortBy === option.value ? 'text-primary font-medium' : 'text-muted'
-                }`}>
+                <span className={`text-sm group-hover:text-secondary transition-colors ${sortBy === option.value ? 'text-primary font-medium' : 'text-muted'}`}>
                   {option.label}
                 </span>
               </label>
@@ -67,7 +67,7 @@ export default function FilterSidebar({
           </div>
         </div>
 
-        {/* Digər Filterlər */}
+        {/* Static Filters */}
         {category.filters.map((filter) => (
           <div key={filter.key}>
             <h4 className="font-semibold text-primary mb-2.5 text-sm">{filter.label}</h4>
@@ -80,9 +80,7 @@ export default function FilterSidebar({
                     onChange={() => onFilterChange(filter.key, option)}
                     className="w-4 h-4 rounded border-border accent-secondary"
                   />
-                  <span className={`text-sm group-hover:text-secondary transition-colors ${
-                    isFilterActive(filter.key, option) ? 'text-primary font-medium' : 'text-muted'
-                  }`}>
+                  <span className={`text-sm group-hover:text-secondary transition-colors ${isFilterActive(filter.key, option) ? 'text-primary font-medium' : 'text-muted'}`}>
                     {option}
                   </span>
                 </label>
@@ -90,14 +88,38 @@ export default function FilterSidebar({
             </div>
           </div>
         ))}
+
+        {/* Dynamic Filters */}
+        {dynamicFilters.length > 0 && (
+          <div className="border-t border-border pt-4">
+            <h4 className="font-semibold text-primary mb-3 text-sm text-secondary">Əlavə Filterlər</h4>
+            {dynamicFilters.map((filter) => (
+              <div key={filter.key} className="mb-4">
+                <h4 className="font-semibold text-primary mb-2 text-sm">{filter.name}</h4>
+                <div className="space-y-1.5">
+                  {filter.options.map((option) => (
+                    <label key={option} className="flex items-center gap-3 cursor-pointer group">
+                      <input
+                        type="checkbox"
+                        checked={isFilterActive(filter.key, option)}
+                        onChange={() => onFilterChange(filter.key, option)}
+                        className="w-4 h-4 rounded border-border accent-secondary"
+                      />
+                      <span className={`text-sm group-hover:text-secondary transition-colors ${isFilterActive(filter.key, option) ? 'text-primary font-medium' : 'text-muted'}`}>
+                        {option}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Footer - Sıfırla düyməsi */}
+      {/* Footer */}
       <div className="p-4 border-t border-border flex-shrink-0 bg-card">
-        <button
-          onClick={handleResetAll}
-          className="w-full py-2.5 text-sm font-medium text-secondary hover:text-secondary/80 transition-colors"
-        >
+        <button onClick={handleResetAll} className="w-full py-2.5 text-sm font-medium text-secondary hover:text-secondary/80 transition-colors">
           Filterləri Sıfırla
         </button>
       </div>
@@ -106,7 +128,7 @@ export default function FilterSidebar({
 
   return (
     <>
-      {/* DESKTOP: Viewport hündürlüyündə, tam scrollable */}
+      {/* DESKTOP */}
       <aside className="hidden lg:block w-60 xl:w-64 flex-shrink-0 h-[calc(100vh-4rem)] sticky top-16">
         <div className="h-full bg-card rounded-2xl border border-border overflow-hidden">
           {sidebarContent(false)}
